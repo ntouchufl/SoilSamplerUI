@@ -1,0 +1,5 @@
+{
+  "name": "SoilSense v5.0",
+  "description": "Automated Soil Analysis System with Python Flet UI. Optimized for Raspberry Pi + Jetson Nano. Direct hardware integration without web bridge.",
+  "requestFramePermissions": []
+}
