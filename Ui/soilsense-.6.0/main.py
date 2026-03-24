@@ -1,6 +1,5 @@
 import flet as ft
 import threading
-import time
 from hardware_logic import SoilSenseLogic, DeviceStatus
 
 def main(page: ft.Page):
@@ -11,7 +10,6 @@ def main(page: ft.Page):
     page.window_height = 900
     page.padding = 20
 
-    # Initialize the Hardware Backend
     logic = SoilSenseLogic()
 
     # --- UI STYLING ---
@@ -20,121 +18,105 @@ def main(page: ft.Page):
     BORDER = "#2c2e33"
     TEXT_MUTED = "#8e9299"
 
-    # --- UI COMPONENTS ---
-    log_column = ft.Column(scroll=ft.ScrollMode.ALWAYS, expand=True)
-    grid_display = ft.GridView(
-        expand=True, 
-        runs_count=3, 
-        max_extent=150, 
-        spacing=10, 
-        run_spacing=10
-    )
-    
-    jetson_image = ft.Image(
-        src="https://picsum.photos/seed/soil/400/300",
-        width=400,
-        height=300,
-        fit=ft.BoxFit.CONTAIN,
-        border_radius=8,
-        visible=False
-    )
-    
-    image_placeholder = ft.Container(
-        content=ft.Column([
-            ft.Icon(ft.Icons.IMAGE_OUTLINED, size=50, color=TEXT_MUTED),
-            ft.Text("No Image Data", color=TEXT_MUTED)
-        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        width=400,
-        height=300,
-        bgcolor="black",
-        border_radius=8,
-        border=ft.Border.all(1, BORDER)
-    )
-
-    btn_start = ft.Button(
-        "START GRID ANALYSIS", 
-        icon=ft.Icons.PLAY_ARROW, 
-        bgcolor=ACCENT, 
-        color="black",
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
-    )
-    
-    btn_stop = ft.Button(
-        "STOP", 
-        icon=ft.Icons.STOP, 
-        bgcolor="#ff4444", 
-        color="white",
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
-        visible=False
-    )
-
-    # Status Indicators
-    status_indicators = {
-        "gantry": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Gantry Status"),
-        "stirrer": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Stirrer Status"),
-        "scoop": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Scoop Status"),
-        "jetson": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Jetson Status")
-    }
-
-    # --- CALLBACK FUNCTIONS ---
-    def refresh_logs_ui():
-        log_column.controls = [ft.Text(l, size=12, color=TEXT_MUTED, font_family="monospace") for l in logic.logs]
-        page.update()
-
-    def refresh_status_ui():
-        for device, indicator in status_indicators.items():
-            indicator.bgcolor = logic.statuses[device].value
-        page.update()
-
-    def refresh_grid_ui():
-        grid_display.controls.clear()
-        grid_display.runs_count = logic.grid_cols
-        
-        for r in range(logic.grid_rows):
-            for c in range(logic.grid_cols):
-                res = logic.soil_results.get((r, c))
-                is_active = logic.isRunning and logic.currentRow == r and logic.currentCol == c
-                
-                grid_display.controls.append(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text(f"{r},{c}", size=10, color=TEXT_MUTED),
-                            ft.Text(res if res else "-", color=ACCENT if res else "white", weight="bold", size=16),
-                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        alignment=ft.Alignment.CENTER,
-                        bgcolor=BG_CARD if not is_active else "#1A00FF41",
-                        border=ft.Border.all(1, ACCENT if is_active or res else BORDER),
-                        border_radius=8,
-                        animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT)
-                    )
-                )
-        
-        btn_start.disabled = logic.isRunning
-        btn_stop.visible = logic.isRunning
-        
-        if logic.last_image:
-            jetson_image.src = logic.last_image
-            jetson_image.visible = True
-            image_placeholder.visible = False
-        else:
-            jetson_image.visible = False
-            image_placeholder.visible = True
-            
-        page.update()
-
-    # Wire the UI functions to the Logic engine
-    logic.on_log_update = refresh_logs_ui
-    logic.on_grid_update = refresh_grid_ui
-    logic.on_status_update = refresh_status_ui
-
+    # --- START / STOP ---
     def handle_start_click(e):
+        # We start the background thread as usual
         threading.Thread(target=logic.run_sequence, daemon=True).start()
 
     def handle_stop_click(e):
         logic.stop_sequence()
 
-    btn_start.on_click = handle_start_click
-    btn_stop.on_click = handle_stop_click
+    # --- UI COMPONENTS ---
+    log_text = ft.Text(value="", size=12, color=TEXT_MUTED, font_family="monospace")
+    log_column = ft.Column([log_text], scroll=ft.ScrollMode.ALWAYS, expand=True)
+    
+    grid_display = ft.GridView(expand=True, runs_count=3, max_extent=150, spacing=10, run_spacing=10)
+    
+    jetson_image = ft.Image(src="https://picsum.photos/seed/soil/400/300", width=400, height=300, fit=ft.BoxFit.CONTAIN, border_radius=8, visible=False)
+    image_placeholder = ft.Container(
+        content=ft.Column([ft.Icon(ft.Icons.IMAGE_OUTLINED, size=50, color=TEXT_MUTED), ft.Text("No Image Data", color=TEXT_MUTED)], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        width=400, height=300, bgcolor="black", border_radius=8, border=ft.Border.all(1, BORDER)
+    )
+
+    btn_start = ft.Button("START GRID ANALYSIS", icon=ft.Icons.PLAY_ARROW, bgcolor=ACCENT, color="black", on_click=handle_start_click, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)))
+    btn_stop = ft.Button("STOP", icon=ft.Icons.STOP, bgcolor="#ff4444", color="white", on_click=handle_stop_click, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)), visible=False)
+
+    status_indicators = {
+        "gantry": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Gantry"),
+        "stirrer": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Stirrer"),
+        "scoop": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Scoop"),
+        "jetson": ft.Container(width=12, height=12, border_radius=6, bgcolor=DeviceStatus.OFFLINE.value, tooltip="Jetson")
+    }
+
+    grid_cells = {}
+    def build_grid_structure():
+        grid_display.controls.clear()
+        grid_cells.clear()
+        grid_display.runs_count = logic.grid_cols
+        for r in range(logic.grid_rows):
+            for c in range(logic.grid_cols):
+                txt_res = ft.Text("-", color="white", weight="bold", size=16)
+                container = ft.Container(
+                    content=ft.Column([ft.Text(f"{r},{c}", size=10, color=TEXT_MUTED), txt_res], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.Alignment.CENTER, bgcolor=BG_CARD, border=ft.Border.all(1, BORDER), border_radius=8,
+                )
+                grid_cells[(r, c)] = {"box": container, "txt": txt_res}
+                grid_display.controls.append(container)
+
+    build_grid_structure()
+
+    # ==========================================
+    # THE PUBSUB MAGIC (THE FIX)
+    # ==========================================
+    def handle_pubsub_message(message):
+        """This function ONLY runs on Flet's main UI thread, triggered by the radio signal."""
+        if message == "refresh":
+            # 1. Update Logs
+            log_text.value = "\n".join(logic.logs)
+
+            # 2. Update Status Lights
+            for device, indicator in status_indicators.items():
+                indicator.bgcolor = logic.statuses[device].value
+
+            # 3. Update Grid
+            if len(grid_cells) != (logic.grid_rows * logic.grid_cols):
+                build_grid_structure()
+
+            for r in range(logic.grid_rows):
+                for c in range(logic.grid_cols):
+                    cell = grid_cells.get((r, c))
+                    if not cell: continue
+                    res = logic.soil_results.get((r, c))
+                    is_active = logic.isRunning and logic.currentRow == r and logic.currentCol == c
+                    
+                    cell["txt"].value = res if res else "-"
+                    cell["txt"].color = ACCENT if res else "white"
+                    cell["box"].bgcolor = "#1A00FF41" if is_active else BG_CARD
+                    cell["box"].border = ft.Border.all(1, ACCENT if is_active or res else BORDER)
+
+            # 4. Update Buttons & Image
+            btn_start.disabled = logic.isRunning
+            btn_stop.visible = logic.isRunning
+            
+            if logic.last_image:
+                jetson_image.src = logic.last_image
+                jetson_image.visible = True
+                image_placeholder.visible = False
+            else:
+                jetson_image.visible = False
+                image_placeholder.visible = True
+
+            # The single, thread-safe page update
+            page.update()
+
+    # Subscribe the UI to listen for radio messages
+    page.pubsub.subscribe(handle_pubsub_message)
+
+    # Wire the logic engine to broadcast a radio message instead of calling UI functions directly
+    logic.on_log_update = lambda: page.pubsub.send_all("refresh")
+    logic.on_grid_update = lambda: page.pubsub.send_all("refresh")
+    logic.on_status_update = lambda: page.pubsub.send_all("refresh")
+    # ==========================================
 
     # --- DASHBOARD VIEW ---
     dashboard_view = ft.Row([
@@ -167,86 +149,51 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Row([
                     ft.Text(name.upper(), weight="bold"),
-                    ft.Switch(
-                        label="Dummy Mode", 
-                        value=logic.device_modes[name] == "dummy",
-                        on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"),
-                        active_color=ACCENT
-                    ),
+                    ft.Switch(label="Dummy Mode", value=logic.device_modes[name] == "dummy", on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"), active_color=ACCENT),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
                     ft.Button("Manual Trigger 1", on_click=lambda _: logic.write_hardware(name, b"CMD1\n")),
                     ft.Button("Manual Trigger 2", on_click=lambda _: logic.write_hardware(name, b"CMD2\n")),
                 ], spacing=10)
             ]),
-            padding=15,
-            bgcolor=BG_CARD,
-            border_radius=10,
-            border=ft.Border.all(1, BORDER)
+            padding=15, bgcolor=BG_CARD, border_radius=10, border=ft.Border.all(1, BORDER)
         )
 
     debug_view = ft.ListView(
-        expand=True,
-        spacing=20,
-        padding=20,
+        expand=True, spacing=20, padding=20,
         controls=[
             ft.Text("HARDWARE MANUAL OVERRIDE", size=20, weight="bold"),
-            ft.Row([
-                create_device_control("gantry"),
-                create_device_control("stirrer"),
-            ], spacing=20),
-            ft.Row([
-                create_device_control("scoop"),
-                create_device_control("jetson"),
-            ], spacing=20),
+            ft.Row([create_device_control("gantry"), create_device_control("stirrer")], spacing=20),
+            ft.Row([create_device_control("scoop"), create_device_control("jetson")], spacing=20),
             ft.Divider(color=BORDER),
             ft.Text("DUMMY RESPONSE SETTINGS", size=16, weight="bold"),
             ft.Row([
                 ft.Column([
                     ft.Text("Move Time (s):", size=12, color=TEXT_MUTED),
-                    ft.Slider(min=0.1, max=5.0, value=logic.dummy_responses["move_time"], on_change=lambda e: logic.dummy_responses.update({"move_time": e.control.value})),
+                    ft.TextField(value=str(logic.dummy_responses["move_time"]), height=40, text_size=14, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"move_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
                 ft.Column([
                     ft.Text("Analyze Time (s):", size=12, color=TEXT_MUTED),
-                    ft.Slider(min=0.1, max=10.0, value=logic.dummy_responses["analyze_time"], on_change=lambda e: logic.dummy_responses.update({"analyze_time": e.control.value})),
+                    ft.TextField(value=str(logic.dummy_responses["analyze_time"]), height=40, text_size=14, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"analyze_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
             ]),
             ft.Text("Mock Soil Types (comma separated):", size=12, color=TEXT_MUTED),
-            ft.TextField(
-                value=", ".join(logic.dummy_responses["soil_types"]),
-                on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})
-            )
+            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]}))
         ]
     )
 
     # --- TAB SYSTEM ---
     tab_system = ft.Tabs(
-        selected_index=0,
-        length=2,
-        expand=True,
+        selected_index=0, length=2, expand=True,
         content=ft.Column([
-            ft.TabBar(
-                tabs=[
-                    ft.Tab(label="Dashboard", icon=ft.Icons.DASHBOARD),
-                    ft.Tab(label="Manual Debug", icon=ft.Icons.HANDYMAN),
-                ]
-            ),
-            ft.TabBarView(
-                expand=True,
-                controls=[
-                    dashboard_view, 
-                    debug_view
-                ]
-            )
+            ft.TabBar(tabs=[ft.Tab(label="Dashboard", icon=ft.Icons.DASHBOARD), ft.Tab(label="Manual Debug", icon=ft.Icons.HANDYMAN)]),
+            ft.TabBarView(expand=True, controls=[dashboard_view, debug_view])
         ])
     )
 
     # --- HEADER ---
     header = ft.Row([
-        ft.Row([
-            ft.Icon(ft.Icons.PRECISION_MANUFACTURING, color=ACCENT, size=30),
-            ft.Text("SoilSense v6.0", size=24, weight="bold", color="white"),
-        ]),
+        ft.Row([ft.Icon(ft.Icons.PRECISION_MANUFACTURING, color=ACCENT, size=30), ft.Text("SoilSense v6.0", size=24, weight="bold", color="white")]),
         ft.Row([
             ft.Row([status_indicators["gantry"], ft.Text("Gantry", size=10, color=TEXT_MUTED)], spacing=5),
             ft.Row([status_indicators["stirrer"], ft.Text("Stirrer", size=10, color=TEXT_MUTED)], spacing=5),
@@ -256,16 +203,10 @@ def main(page: ft.Page):
     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
     # --- FINAL PAGE ADD ---
-    page.add(
-        header,
-        ft.Divider(height=10, color=BORDER),
-        tab_system
-    )
-
-    # Initial Render
-    refresh_grid_ui()
-    refresh_logs_ui()
-    refresh_status_ui()
+    page.add(header, ft.Divider(height=10, color=BORDER), tab_system)
+    
+    # Initialize UI state
+    handle_pubsub_message("refresh")
 
 if __name__ == "__main__":
     ft.run(main)

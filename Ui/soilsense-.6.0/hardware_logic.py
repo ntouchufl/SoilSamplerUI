@@ -2,13 +2,16 @@ import time
 import socket
 import threading
 import random
-import base64
+import serial
+import serial.tools.list_ports
 from enum import Enum
 
 # --- CONFIGURATION ---
-GANTRY_PORT = "/dev/ttyACM0"
-STIRRER_PORT = "/dev/ttyACM1"
-SCOOP_PORT = "/dev/ttyACM2"
+# REPLACE THESE WITH YOUR ACTUAL ARDUINO SERIAL NUMBERS
+GANTRY_SERIAL = "48CA435A3A20" 
+STIRRER_SERIAL = "0987654321FEDCBA"
+SCOOP_SERIAL = "5555555555123456"
+
 JETSON_IP = "192.168.1.100"
 JETSON_PORT = 5005
 
@@ -34,9 +37,9 @@ class SoilSenseLogic:
         # Individual Device Modes: "real" or "dummy"
         self.device_modes = {
             "gantry": "real",
-            "stirrer": "real",
-            "scoop": "real",
-            "jetson": "real"
+            "stirrer": "dummy",
+            "scoop": "dummy",
+            "jetson": "dummy" # Keeping Jetson dummy until you have the script running
         }
         
         # Device Statuses
@@ -49,12 +52,11 @@ class SoilSenseLogic:
 
         self.isRunning = False
         self.logs = ["SoilSense v6.0 Engine Online."]
-        self.soil_results = {} # Keyed by (row, col)
+        self.soil_results = {}
         self.currentRow = 0
         self.currentCol = 0
-        self.last_image = None # Base64 or path
+        self.last_image = None
         
-        # Custom Dummy Responses
         self.dummy_responses = {
             "soil_types": ["Loam", "Clay", "Silt", "Sand"],
             "move_time": 1.5,
@@ -70,31 +72,46 @@ class SoilSenseLogic:
 
         self.init_hardware()
 
+    def find_port_by_serial(self, target_serial):
+        """Scans all USB ports and returns the OS path for the matching serial number."""
+        available_ports = serial.tools.list_ports.comports()
+        for port in available_ports:
+            # Some devices return None for serial_number, so we must check if it exists
+            if port.serial_number and target_serial in port.serial_number:
+                return port.device
+        return None
+
     def init_hardware(self):
-        self.log("Initializing hardware components...")
+        self.log("Scanning USB bus for hardware...")
         
-        # Initialize Arduinos
+        serial_map = {"gantry": GANTRY_SERIAL, "stirrer": STIRRER_SERIAL, "scoop": SCOOP_SERIAL}
+        baud_map = {"gantry": 115200, "stirrer": 9600, "scoop": 9600}
+
         for device in ["gantry", "stirrer", "scoop"]:
             if self.device_modes[device] == "dummy":
                 self.ports[device] = MockSerial(device.upper())
                 self.statuses[device] = DeviceStatus.DUMMY
             else:
                 try:
-                    import serial
-                    port_map = {"gantry": GANTRY_PORT, "stirrer": STIRRER_PORT, "scoop": SCOOP_PORT}
-                    baud_map = {"gantry": 115200, "stirrer": 9600, "scoop": 9600}
-                    self.ports[device] = serial.Serial(port_map[device], baud_map[device], timeout=1)
+                    # Look up the dynamic OS port (e.g., COM3 or /dev/ttyACM0)
+                    target_sn = serial_map[device]
+                    actual_port = self.find_port_by_serial(target_sn)
+                    
+                    if actual_port is None:
+                        raise Exception(f"Serial '{target_sn}' not found on USB bus.")
+                        
+                    self.ports[device] = serial.Serial(actual_port, baud_map[device], timeout=1)
                     self.statuses[device] = DeviceStatus.ONLINE
+                    self.log(f"Connected {device.upper()} on {actual_port}")
                 except Exception as e:
-                    self.log(f"Error connecting to {device}: {e}")
+                    self.log(f"Error connecting {device}: {e}")
                     self.statuses[device] = DeviceStatus.OFFLINE
                     self.ports[device] = None
 
-        # Initialize Jetson (Ethernet Check)
+        # Initialize Jetson
         if self.device_modes["jetson"] == "dummy":
             self.statuses["jetson"] = DeviceStatus.DUMMY
         else:
-            # Simple ping/socket check
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(1)
@@ -135,11 +152,9 @@ class SoilSenseLogic:
                 self.log(f"Write error on {device}: {e}")
 
     def communicate_with_jetson(self, command):
-        """Handles Ethernet communication with Jetson Nano"""
         if self.device_modes["jetson"] == "dummy":
             time.sleep(self.dummy_responses["analyze_time"])
             res = random.choice(self.dummy_responses["soil_types"])
-            # Generate a placeholder image (using a public URL for simulation)
             img = f"https://picsum.photos/seed/{random.random()}/400/300"
             return res, img
         else:
@@ -149,7 +164,6 @@ class SoilSenseLogic:
                     s.connect((JETSON_IP, JETSON_PORT))
                     s.sendall(command.encode())
                     data = s.recv(4096).decode()
-                    # Expecting format: "SOIL_TYPE|BASE64_IMAGE"
                     parts = data.split("|")
                     soil_type = parts[0]
                     image_data = parts[1] if len(parts) > 1 else None
@@ -165,7 +179,6 @@ class SoilSenseLogic:
         if self.on_grid_update: self.on_grid_update()
         
         self.log(f"Starting {self.grid_rows}x{self.grid_cols} Grid Analysis...")
-        
         dist = 5.0 
         
         for r in range(self.grid_rows):
