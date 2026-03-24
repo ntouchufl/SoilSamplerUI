@@ -185,9 +185,14 @@ class SystemDashboard(QMainWindow):
 
         # Setup Arduinos
         # (Make sure these match your actual serial numbers and baud rates)
-        self.ard_gan = ArduinoWorker(target_serial_number="48CA435A3A20", baud=115200)
-        self.ard_stir = ArduinoWorker(target_serial_number="95138323838351401091", baud=9600)
-        self.ard_scoop = ArduinoWorker(target_serial_number="44231313430351116261", baud=9600)
+        #self.ard_gan = ArduinoWorker(target_serial_number="48CA435A3A20", baud=115200)
+        #self.ard_stir = ArduinoWorker(target_serial_number="95138323838351401091", baud=9600)
+        #self.ard_scoop = ArduinoWorker(target_serial_number="44231313430351116261", baud=9600)
+
+
+        self.ard_gan = ArduinoWorker(target_serial_number="1344A474030351C07938", baud=9600)
+        self.ard_stir = ArduinoWorker(target_serial_number="33436323438351818303", baud=9600)
+        self.ard_scoop = ArduinoWorker(target_serial_number="1344A474030351B0F919", baud=9600)
 
         # Optional: Route logs to terminal (you can route these to a UI text box later)
         self.ard_gan.log.connect(lambda s: print(f"  [Gan Log]: {s}"))

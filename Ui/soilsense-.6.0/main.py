@@ -6,9 +6,11 @@ def main(page: ft.Page):
     page.title = "SoilSense v6.0"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#151619"
-    page.window_width = 1200
-    page.window_height = 900
+    page.window_width = 1920
+    page.window_height = 1200
     page.padding = 20
+
+    page.window.full_screen = True
 
     logic = SoilSenseLogic()
 
