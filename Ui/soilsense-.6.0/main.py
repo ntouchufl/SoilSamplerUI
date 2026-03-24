@@ -2,6 +2,7 @@ import flet as ft
 import threading
 from hardware_logic import SoilSenseLogic, DeviceStatus
 
+
 def main(page: ft.Page):
     page.title = "SoilSense v6.0"
     page.theme_mode = ft.ThemeMode.DARK
@@ -27,6 +28,10 @@ def main(page: ft.Page):
 
     def handle_stop_click(e):
         logic.stop_sequence()
+
+    async def handle_exit_click(e):
+        print("[DEBUG] Shutting down SoilSense...")
+        await page.window.close()  # This violently closes the Flet app and returns you to the OS
 
     # --- UI COMPONENTS ---
     log_text = ft.Text(value="", size=12, color=TEXT_MUTED, font_family="monospace")
@@ -180,7 +185,16 @@ def main(page: ft.Page):
                 ], expand=1),
             ]),
             ft.Text("Mock Soil Types (comma separated):", size=12, color=TEXT_MUTED),
-            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]}))
+            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
+            ft.Button(
+                "EXIT TO DESKTOP", 
+                icon=ft.Icons.POWER_SETTINGS_NEW, 
+                bgcolor="#ff4444", 
+                color="white", 
+                on_click=handle_exit_click, 
+                style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+                height=50
+            )
         ]
     )
 
