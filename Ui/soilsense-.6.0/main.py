@@ -231,4 +231,4 @@ def main(page: ft.Page):
     handle_pubsub_message("refresh")
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(main, assets_dir="images")

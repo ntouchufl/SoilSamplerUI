@@ -153,9 +153,15 @@ class SoilSenseLogic:
 
     def communicate_with_jetson(self, command):
         if self.device_modes["jetson"] == "dummy":
+            goofy = False
+            
             time.sleep(self.dummy_responses["analyze_time"])
             res = random.choice(self.dummy_responses["soil_types"])
-            img = f"https://picsum.photos/seed/{random.random()}/400/300"
+            if goofy:
+                img_num = random.randomint(1,3)
+                img = f"/IM{img_num}.jpg"
+            else:
+                img = f"https://picsum.photos/seed/{random.random()}/400/300"
             return res, img
         else:
             try:
