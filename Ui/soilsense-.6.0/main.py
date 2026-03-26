@@ -7,7 +7,6 @@ def main(page: ft.Page):
     page.title = "SoilSense v6.0"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#151619"
-    page.padding = 40  # Increased padding from edges
 
     # Target Raspberry Pi Display Resolution (Update to match your exact screen)
     PI_WIDTH = 1920
@@ -15,12 +14,16 @@ def main(page: ft.Page):
 
     # Kiosk Mode Lock on Pi, fixed window size on macOS
     if platform.system() == "Darwin":  # "Darwin" is macOS
-        page.window.width = PI_WIDTH
-        page.window.height = PI_HEIGHT
+        SCALE = 0.5  # Scale down to 50% for Mac to fit the screen
+        page.window.width = int(PI_WIDTH * SCALE)
+        page.window.height = int(PI_HEIGHT * SCALE)
         page.window.full_screen = False
         page.window.resizable = False  # Lock resizing to mimic a fixed physical screen
     else:
+        SCALE = 1.0
         page.window.full_screen = True
+
+    page.padding = int(40 * SCALE)  # Increased padding from edges
 
     logic = SoilSenseLogic()
 
@@ -31,12 +34,12 @@ def main(page: ft.Page):
     TEXT_MUTED = "#8e9299"
 
     # Fat-Finger Sizing Variables (Tweak these if it's too big/small)
-    TXT_TINY = 18
-    TXT_MED = 24
-    TXT_LARGE = 36
-    ICON_LG = 48
-    BTN_HEIGHT = 80
-    GRID_SIZE = 300 # Makes the gantry boxes massive
+    TXT_TINY = int(18 * SCALE)
+    TXT_MED = int(24 * SCALE)
+    TXT_LARGE = int(36 * SCALE)
+    ICON_LG = int(48 * SCALE)
+    BTN_HEIGHT = int(80 * SCALE)
+    GRID_SIZE = int(300 * SCALE) # Makes the gantry boxes massive
 
     # --- BUTTON CLICK HANDLERS ---
     def handle_start_click(e):
@@ -53,23 +56,23 @@ def main(page: ft.Page):
     log_text = ft.Text(value="", size=TXT_MED, color=TEXT_MUTED, font_family="monospace")
     log_column = ft.Column([log_text], scroll=ft.ScrollMode.ALWAYS, expand=True)
     
-    grid_display = ft.GridView(expand=True, runs_count=3, max_extent=GRID_SIZE, spacing=15, run_spacing=15)
+    grid_display = ft.GridView(expand=True, runs_count=3, max_extent=GRID_SIZE, spacing=int(15 * SCALE), run_spacing=int(15 * SCALE))
     
     jetson_image = ft.Image(
         src="https://picsum.photos/seed/soil/600/450",
-        width=600, height=450, fit=ft.BoxFit.CONTAIN, border_radius=12, visible=False
+        width=int(600 * SCALE), height=int(450 * SCALE), fit=ft.BoxFit.CONTAIN, border_radius=int(12 * SCALE), visible=False
     )
     
     image_placeholder = ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.IMAGE_OUTLINED, size=100, color=TEXT_MUTED),
+            ft.Icon(ft.Icons.IMAGE_OUTLINED, size=int(100 * SCALE), color=TEXT_MUTED),
             ft.Text("No Image Data", size=TXT_MED, color=TEXT_MUTED)
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        width=600, height=450, bgcolor="black", border_radius=12, border=ft.Border.all(2, BORDER)
+        width=int(600 * SCALE), height=int(450 * SCALE), bgcolor="black", border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
     )
 
     btn_style = ft.ButtonStyle(
-        shape=ft.RoundedRectangleBorder(radius=12), 
+        shape=ft.RoundedRectangleBorder(radius=int(12 * SCALE)), 
         text_style=ft.TextStyle(size=TXT_MED, weight="bold")
     )
 
@@ -78,10 +81,10 @@ def main(page: ft.Page):
 
     # Fat Status Dots
     status_indicators = {
-        "gantry": ft.Container(width=24, height=24, border_radius=12, bgcolor=DeviceStatus.OFFLINE.value),
-        "stirrer": ft.Container(width=24, height=24, border_radius=12, bgcolor=DeviceStatus.OFFLINE.value),
-        "scoop": ft.Container(width=24, height=24, border_radius=12, bgcolor=DeviceStatus.OFFLINE.value),
-        "jetson": ft.Container(width=24, height=24, border_radius=12, bgcolor=DeviceStatus.OFFLINE.value)
+        "gantry": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
+        "stirrer": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
+        "scoop": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
+        "jetson": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value)
     }
 
     grid_cells = {}
@@ -94,7 +97,7 @@ def main(page: ft.Page):
                 txt_res = ft.Text("-", color="white", weight="bold", size=TXT_LARGE)
                 container = ft.Container(
                     content=ft.Column([ft.Text(f"{r},{c}", size=TXT_TINY, color=TEXT_MUTED), txt_res], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    alignment=ft.Alignment.CENTER, bgcolor=BG_CARD, border=ft.Border.all(2, BORDER), border_radius=12,
+                    alignment=ft.Alignment.CENTER, bgcolor=BG_CARD, border=ft.Border.all(2, BORDER), border_radius=int(12 * SCALE),
                 )
                 grid_cells[(r, c)] = {"box": container, "txt": txt_res}
                 grid_display.controls.append(container)
@@ -149,21 +152,21 @@ def main(page: ft.Page):
                 ft.Text("GANTRY VISUALIZER", size=TXT_MED, weight="bold", color=TEXT_MUTED),
                 ft.Row([
                     ft.Text("Rows:", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.grid_rows), width=80, height=60, text_size=TXT_MED, content_padding=10, on_change=lambda e: logic.update_grid_size(int(e.control.value or 1), logic.grid_cols)),
+                    ft.TextField(value=str(logic.grid_rows), width=int(80 * SCALE), height=int(60 * SCALE), text_size=TXT_MED, content_padding=int(10 * SCALE), on_change=lambda e: logic.update_grid_size(int(e.control.value or 1), logic.grid_cols)),
                     ft.Text("Cols:", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.grid_cols), width=80, height=60, text_size=TXT_MED, content_padding=10, on_change=lambda e: logic.update_grid_size(logic.grid_rows, int(e.control.value or 1))),
-                ], spacing=15)
+                    ft.TextField(value=str(logic.grid_cols), width=int(80 * SCALE), height=int(60 * SCALE), text_size=TXT_MED, content_padding=int(10 * SCALE), on_change=lambda e: logic.update_grid_size(logic.grid_rows, int(e.control.value or 1))),
+                ], spacing=int(15 * SCALE))
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Container(content=grid_display, expand=True),
-            ft.Row([btn_start, btn_stop], spacing=20),
+            ft.Row([btn_start, btn_stop], spacing=int(20 * SCALE)),
         ], expand=2),
         ft.VerticalDivider(width=2, color=BORDER),
         ft.Column([
             ft.Text("JETSON FEED", size=TXT_MED, weight="bold", color=TEXT_MUTED),
             ft.Stack([image_placeholder, jetson_image]),
-            ft.Divider(height=20, color="transparent"),
+            ft.Divider(height=int(20 * SCALE), color="transparent"),
             ft.Text("SYSTEM LOGS", size=TXT_MED, weight="bold", color=TEXT_MUTED),
-            ft.Container(content=log_column, expand=True, bgcolor="black", padding=20, border_radius=12),
+            ft.Container(content=log_column, expand=True, bgcolor="black", padding=int(20 * SCALE), border_radius=int(12 * SCALE)),
         ], expand=1)
     ], expand=True)
 
@@ -173,36 +176,36 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Row([
                     ft.Text(name.upper(), size=TXT_MED, weight="bold"),
-                    ft.Switch(label="Dummy Mode", value=logic.device_modes[name] == "dummy", scale=1.5, on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"), active_color=ACCENT),
+                    ft.Switch(label="Dummy Mode", value=logic.device_modes[name] == "dummy", scale=1.5 * SCALE, on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"), active_color=ACCENT),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
-                    ft.Button("Trigger 1", height=60, on_click=lambda _: logic.write_hardware(name, b"CMD1\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                    ft.Button("Trigger 2", height=60, on_click=lambda _: logic.write_hardware(name, b"CMD2\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                ], spacing=20)
-            ], spacing=20),
-            padding=25, bgcolor=BG_CARD, border_radius=12, border=ft.Border.all(2, BORDER)
+                    ft.Button("Trigger 1", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD1\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
+                    ft.Button("Trigger 2", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD2\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
+                ], spacing=int(20 * SCALE))
+            ], spacing=int(20 * SCALE)),
+            padding=int(25 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
         )
 
     debug_view = ft.ListView(
-        expand=True, spacing=30, padding=30,
+        expand=True, spacing=int(30 * SCALE), padding=int(30 * SCALE),
         controls=[
             ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_LARGE, weight="bold"),
-            ft.Row([create_device_control("gantry"), create_device_control("stirrer")], spacing=30),
-            ft.Row([create_device_control("scoop"), create_device_control("jetson")], spacing=30),
+            ft.Row([create_device_control("gantry"), create_device_control("stirrer")], spacing=int(30 * SCALE)),
+            ft.Row([create_device_control("scoop"), create_device_control("jetson")], spacing=int(30 * SCALE)),
             ft.Divider(color=BORDER),
             ft.Text("DUMMY RESPONSE SETTINGS", size=TXT_MED, weight="bold"),
             ft.Row([
                 ft.Column([
                     ft.Text("Move Time (s):", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.dummy_responses["move_time"]), height=60, text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"move_time": float(e.control.value) if e.control.value else 0.0})),
+                    ft.TextField(value=str(logic.dummy_responses["move_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"move_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
                 ft.Column([
                     ft.Text("Analyze Time (s):", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.dummy_responses["analyze_time"]), height=60, text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"analyze_time": float(e.control.value) if e.control.value else 0.0})),
+                    ft.TextField(value=str(logic.dummy_responses["analyze_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"analyze_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
-            ], spacing=30),
+            ], spacing=int(30 * SCALE)),
             ft.Text("Mock Soil Types (comma separated):", size=TXT_MED, color=TEXT_MUTED),
-            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=60, text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
+            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=int(60 * SCALE), text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
             ft.Divider(color=BORDER),
             ft.Button("EXIT TO DESKTOP", icon=ft.Icons.POWER_SETTINGS_NEW, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_exit_click, style=btn_style)
         ]
@@ -229,15 +232,15 @@ def main(page: ft.Page):
     header = ft.Row([
         ft.Row([ft.Icon(ft.Icons.PRECISION_MANUFACTURING, color=ACCENT, size=ICON_LG), ft.Text("SoilSense v6.0", size=TXT_LARGE, weight="bold", color="white")]),
         ft.Row([
-            ft.Row([status_indicators["gantry"], ft.Text("Gantry", size=TXT_TINY, color=TEXT_MUTED)], spacing=10),
-            ft.Row([status_indicators["stirrer"], ft.Text("Stirrer", size=TXT_TINY, color=TEXT_MUTED)], spacing=10),
-            ft.Row([status_indicators["scoop"], ft.Text("Scoop", size=TXT_TINY, color=TEXT_MUTED)], spacing=10),
-            ft.Row([status_indicators["jetson"], ft.Text("Jetson", size=TXT_TINY, color=TEXT_MUTED)], spacing=10),
-        ], spacing=30)
+            ft.Row([status_indicators["gantry"], ft.Text("Gantry", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
+            ft.Row([status_indicators["stirrer"], ft.Text("Stirrer", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
+            ft.Row([status_indicators["scoop"], ft.Text("Scoop", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
+            ft.Row([status_indicators["jetson"], ft.Text("Jetson", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
+        ], spacing=int(30 * SCALE))
     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
     # --- FINAL PAGE ADD ---
-    page.add(header, ft.Divider(height=10, color=BORDER), tab_system)
+    page.add(header, ft.Divider(height=int(10 * SCALE), color=BORDER), tab_system)
     
     handle_pubsub_message("refresh")
 
