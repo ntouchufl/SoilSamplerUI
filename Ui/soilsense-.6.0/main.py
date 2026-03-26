@@ -1,5 +1,6 @@
 import flet as ft
 import threading
+import platform
 from hardware_logic import SoilSenseLogic, DeviceStatus
 
 def main(page: ft.Page):
@@ -8,8 +9,18 @@ def main(page: ft.Page):
     page.bgcolor = "#151619"
     page.padding = 40  # Increased padding from edges
 
-    # Kiosk Mode Lock
-    page.window.full_screen = True 
+    # Target Raspberry Pi Display Resolution (Update to match your exact screen)
+    PI_WIDTH = 1024
+    PI_HEIGHT = 600
+
+    # Kiosk Mode Lock on Pi, fixed window size on macOS
+    if platform.system() == "Darwin":  # "Darwin" is macOS
+        page.window.width = PI_WIDTH
+        page.window.height = PI_HEIGHT
+        page.window.full_screen = False
+        page.window.resizable = False  # Lock resizing to mimic a fixed physical screen
+    else:
+        page.window.full_screen = True
 
     logic = SoilSenseLogic()
 
