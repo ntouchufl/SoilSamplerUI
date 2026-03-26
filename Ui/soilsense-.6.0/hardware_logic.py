@@ -227,6 +227,8 @@ class SoilSenseLogic:
         self.isRunning = False
         if self.on_grid_update: self.on_grid_update()
 
+        
+
     def stop_sequence(self):
         self.isRunning = False
         self.log("Sequence Aborted by User.")
