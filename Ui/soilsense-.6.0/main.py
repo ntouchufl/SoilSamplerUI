@@ -10,8 +10,8 @@ def main(page: ft.Page):
     page.padding = 40  # Increased padding from edges
 
     # Target Raspberry Pi Display Resolution (Update to match your exact screen)
-    PI_WIDTH = 1024
-    PI_HEIGHT = 600
+    PI_WIDTH = 1920
+    PI_HEIGHT = 1200
 
     # Kiosk Mode Lock on Pi, fixed window size on macOS
     if platform.system() == "Darwin":  # "Darwin" is macOS
