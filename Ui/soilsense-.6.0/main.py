@@ -140,10 +140,15 @@ def main(page: ft.Page):
             else: # ONLINE (Real mode, detected)
                 for door, indicator in door_indicators.items():
                     door_state = logic.door_statuses[door]
-                    # Solid red for open, green ring for closed
-                    indicator.border = None if door_state == DeviceStatus.OFFLINE else ft.Border.all(int(2 * SCALE), DeviceStatus.ONLINE.value)
-                    indicator.bgcolor = DeviceStatus.OFFLINE.value if door_state == DeviceStatus.OFFLINE else BG_CARD
-
+                    
+                    # Always show a green outline to indicate the connection is active
+                    indicator.border = ft.Border.all(int(2 * SCALE), DeviceStatus.ONLINE.value)
+                    
+                    # Red fill for Open (OFFLINE), Green fill for Closed (ONLINE)
+                    if door_state == DeviceStatus.OFFLINE:
+                        indicator.bgcolor = DeviceStatus.OFFLINE.value
+                    else:
+                        indicator.bgcolor = DeviceStatus.ONLINE.value
             if len(grid_cells) != (logic.grid_rows * logic.grid_cols):
                 build_grid_structure()
 
