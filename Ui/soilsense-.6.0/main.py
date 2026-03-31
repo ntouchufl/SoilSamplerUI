@@ -55,7 +55,8 @@ def main(page: ft.Page):
     # --- UI COMPONENTS ---
     log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, expand=True)
     
-    grid_display = ft.GridView(expand=True, runs_count=3, spacing=int(15 * SCALE), run_spacing=int(15 * SCALE))
+    # Changed from GridView to Column to allow dynamic vertical shrinking
+    grid_display = ft.Column(expand=True, spacing=int(15 * SCALE))
     
     jetson_image = ft.Image(
         src="https://picsum.photos/seed/soil/400/300",
@@ -96,16 +97,21 @@ def main(page: ft.Page):
     def build_grid_structure():
         grid_display.controls.clear()
         grid_cells.clear()
-        grid_display.runs_count = logic.grid_cols
+        
         for r in range(logic.grid_rows):
+            row_controls = []
             for c in range(logic.grid_cols):
                 txt_res = ft.Text("-", color="white", weight="bold", size=TXT_LARGE)
                 container = ft.Container(
+                    expand=True, # Forces cells to share horizontal space evenly
                     content=ft.Column([ft.Text(f"{r},{c}", size=TXT_TINY, color=TEXT_MUTED), txt_res], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     alignment=ft.Alignment.CENTER, bgcolor=BG_CARD, border=ft.Border.all(2, BORDER), border_radius=int(12 * SCALE),
                 )
                 grid_cells[(r, c)] = {"box": container, "txt": txt_res}
-                grid_display.controls.append(container)
+                row_controls.append(container)
+            
+            # Add the row to the display, expand=True forces rows to share vertical space evenly
+            grid_display.controls.append(ft.Row(row_controls, expand=True, spacing=int(15 * SCALE)))
 
     build_grid_structure()
 
