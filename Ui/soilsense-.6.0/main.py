@@ -38,8 +38,8 @@ def main(page: ft.Page):
     TXT_MED = int(24 * SCALE)
     TXT_LARGE = int(36 * SCALE)
     ICON_LG = int(48 * SCALE)
-    BTN_HEIGHT = int(80 * SCALE)
-    GRID_SIZE = int(300 * SCALE) # Makes the gantry boxes massive
+    BTN_HEIGHT = int(80 * SCALE) 
+    GRID_SIZE = int(180 * SCALE) # Size of the gantry grid cells
 
     # --- BUTTON CLICK HANDLERS ---
     def handle_start_click(e):
@@ -53,22 +53,21 @@ def main(page: ft.Page):
         await page.window.close()
 
     # --- UI COMPONENTS ---
-    log_text = ft.Text(value="", size=TXT_MED, color=TEXT_MUTED, font_family="monospace")
-    log_column = ft.Column([log_text], scroll=ft.ScrollMode.ALWAYS, expand=True)
+    log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, expand=True)
     
-    grid_display = ft.GridView(expand=True, runs_count=3, max_extent=GRID_SIZE, spacing=int(15 * SCALE), run_spacing=int(15 * SCALE))
+    grid_display = ft.GridView(expand=True, runs_count=3, spacing=int(15 * SCALE), run_spacing=int(15 * SCALE))
     
     jetson_image = ft.Image(
-        src="https://picsum.photos/seed/soil/600/450",
-        width=int(600 * SCALE), height=int(450 * SCALE), fit=ft.BoxFit.CONTAIN, border_radius=int(12 * SCALE), visible=False
+        src="https://picsum.photos/seed/soil/400/300",
+        width=int(400 * SCALE), height=int(300 * SCALE), fit=ft.BoxFit.CONTAIN, border_radius=int(12 * SCALE), visible=False
     )
     
     image_placeholder = ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.IMAGE_OUTLINED, size=int(100 * SCALE), color=TEXT_MUTED),
+            ft.Icon(ft.Icons.IMAGE_OUTLINED, size=int(80 * SCALE), color=TEXT_MUTED),
             ft.Text("No Image Data", size=TXT_MED, color=TEXT_MUTED)
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        width=int(600 * SCALE), height=int(450 * SCALE), bgcolor="black", border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
+        width=int(400 * SCALE), height=int(300 * SCALE), bgcolor="black", border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
     )
 
     btn_style = ft.ButtonStyle(
@@ -79,12 +78,18 @@ def main(page: ft.Page):
     btn_start = ft.Button("START GRID ANALYSIS", icon=ft.Icons.PLAY_ARROW, bgcolor=ACCENT, color="black", height=BTN_HEIGHT, on_click=handle_start_click, style=btn_style)
     btn_stop = ft.Button("STOP", icon=ft.Icons.STOP, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_stop_click, style=btn_style, visible=False)
 
+    # Door Status Dots (Default: Open = Red)
+    door_indicators = {
+        "left": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE)),
+        "right": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE))
+    }
+
     # Fat Status Dots
     status_indicators = {
-        "gantry": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "stirrer": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "scoop": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "jetson": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE), bgcolor=DeviceStatus.OFFLINE.value)
+        "gantry": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE)),
+        "stirrer": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE)),
+        "scoop": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE)),
+        "jetson": ft.Container(width=int(24 * SCALE), height=int(24 * SCALE), border_radius=int(12 * SCALE))
     }
 
     grid_cells = {}
@@ -107,10 +112,37 @@ def main(page: ft.Page):
     # --- THE PUBSUB MAGIC ---
     def handle_pubsub_message(message):
         if message == "refresh":
-            log_text.value = "\n".join(logic.logs)
+            # Check if the number of logs has changed to trigger a rebuild and scroll
+            if len(log_column.controls) != len(logic.logs):
+                log_column.controls = [
+                    ft.Text(line, size=TXT_TINY, color=TEXT_MUTED, font_family="monospace", selectable=True) for line in logic.logs
+                ]
+                log_column.scroll_to(offset=-1, duration=300)
 
+            # --- Status Indicators (Gantry, Stirrer, etc.) ---
             for device, indicator in status_indicators.items():
-                indicator.bgcolor = logic.statuses[device].value
+                status = logic.statuses[device]
+                indicator.border = ft.Border.all(int(2 * SCALE), status.value)
+                indicator.bgcolor = BG_CARD # Hollow appearance
+
+            # --- Door Indicators ---
+            door_overall_status = logic.statuses["doors"]
+            if door_overall_status == DeviceStatus.OFFLINE:
+                # Not detected: Red ring, hollow inside
+                for indicator in door_indicators.values():
+                    indicator.border = ft.Border.all(int(2 * SCALE), DeviceStatus.OFFLINE.value)
+                    indicator.bgcolor = BG_CARD
+            elif door_overall_status == DeviceStatus.DUMMY:
+                # Dummy mode: Yellow ring, inner color for state
+                for door, indicator in door_indicators.items():
+                    indicator.border = ft.Border.all(int(2 * SCALE), DeviceStatus.DUMMY.value)
+                    indicator.bgcolor = logic.door_statuses[door].value
+            else: # ONLINE (Real mode, detected)
+                for door, indicator in door_indicators.items():
+                    door_state = logic.door_statuses[door]
+                    # Solid red for open, green ring for closed
+                    indicator.border = None if door_state == DeviceStatus.OFFLINE else ft.Border.all(int(2 * SCALE), DeviceStatus.ONLINE.value)
+                    indicator.bgcolor = DeviceStatus.OFFLINE.value if door_state == DeviceStatus.OFFLINE else BG_CARD
 
             if len(grid_cells) != (logic.grid_rows * logic.grid_cols):
                 build_grid_structure()
@@ -137,6 +169,9 @@ def main(page: ft.Page):
             else:
                 jetson_image.visible = False
                 image_placeholder.visible = True
+
+            # Update visibility of door toggle buttons in debug view
+            door_toggle_row.visible = logic.device_modes["doors"] == "dummy"
 
             page.update()
 
@@ -171,18 +206,47 @@ def main(page: ft.Page):
     ], expand=True)
 
     # --- DEBUG VIEW ---
+    # Create controls that need to be updated dynamically
+    door_toggle_row = ft.Row(visible=False, spacing=int(20 * SCALE))
+
     def create_device_control(name):
-        return ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text(name.upper(), size=TXT_MED, weight="bold"),
-                    ft.Switch(label="Dummy Mode", value=logic.device_modes[name] == "dummy", scale=1.5 * SCALE, on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"), active_color=ACCENT),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        is_mac_and_doors = platform.system() == "Darwin" and name == "doors"
+
+        dummy_switch = ft.Switch(
+            label="Dummy Mode",
+            value=logic.device_modes[name] == "dummy",
+            scale=1.5 * SCALE,
+            on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"),
+            active_color=ACCENT,
+            disabled=is_mac_and_doors
+        )
+
+        content_rows = [
+            ft.Row([
+                ft.Text(name.upper(), size=TXT_MED, weight="bold"),
+                dummy_switch,
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        ]
+
+        if name == "doors":
+            # Add the door toggle buttons to the pre-defined row
+            door_toggle_row.controls.clear() # Clear previous in case of rebuild
+            door_toggle_row.controls.extend([
+                ft.Button("Toggle Left", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("left"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
+                ft.Button("Toggle Right", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("right"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
+            ])
+            content_rows.append(door_toggle_row)
+        else:
+            # Generic trigger buttons for other devices
+            content_rows.append(
                 ft.Row([
                     ft.Button("Trigger 1", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD1\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
                     ft.Button("Trigger 2", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD2\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
                 ], spacing=int(20 * SCALE))
-            ], spacing=int(20 * SCALE)),
+            )
+
+        return ft.Container(
+            content=ft.Column(content_rows, spacing=int(20 * SCALE)),
             padding=int(25 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
         )
 
@@ -192,6 +256,7 @@ def main(page: ft.Page):
             ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_LARGE, weight="bold"),
             ft.Row([create_device_control("gantry"), create_device_control("stirrer")], spacing=int(30 * SCALE)),
             ft.Row([create_device_control("scoop"), create_device_control("jetson")], spacing=int(30 * SCALE)),
+            ft.Row([create_device_control("doors")], spacing=int(30 * SCALE)),
             ft.Divider(color=BORDER),
             ft.Text("DUMMY RESPONSE SETTINGS", size=TXT_MED, weight="bold"),
             ft.Row([
@@ -232,6 +297,8 @@ def main(page: ft.Page):
     header = ft.Row([
         ft.Row([ft.Icon(ft.Icons.PRECISION_MANUFACTURING, color=ACCENT, size=ICON_LG), ft.Text("SoilSense v6.0", size=TXT_LARGE, weight="bold", color="white")]),
         ft.Row([
+            ft.Row([door_indicators["left"], ft.Text("Left Door", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
+            ft.Row([door_indicators["right"], ft.Text("Right Door", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
             ft.Row([status_indicators["gantry"], ft.Text("Gantry", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
             ft.Row([status_indicators["stirrer"], ft.Text("Stirrer", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),
             ft.Row([status_indicators["scoop"], ft.Text("Scoop", size=TXT_TINY, color=TEXT_MUTED)], spacing=int(10 * SCALE)),

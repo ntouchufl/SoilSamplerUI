@@ -59,6 +59,10 @@ class SoilSenseLogic:
         if self.ports[device]:
             self.ports[device].write(command)
 
+    def check_door(self, door_num):
+        """Function that is checking for door status"""
+        
+
     def run_sequence(self):
         self.isRunning = True
         if self.on_grid_update: self.on_grid_update()
