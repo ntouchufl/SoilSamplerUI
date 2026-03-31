@@ -53,7 +53,8 @@ def main(page: ft.Page):
         await page.window.close()
 
     # --- UI COMPONENTS ---
-    log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, expand=True)
+    # Added auto_scroll=True so Flet handles this natively
+    log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, auto_scroll=True, expand=True)
     
     # Changed from GridView to Column to allow dynamic vertical shrinking
     grid_display = ft.Column(expand=True, spacing=int(15 * SCALE))
