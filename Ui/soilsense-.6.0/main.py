@@ -52,6 +52,35 @@ def main(page: ft.Page):
         print("[DEBUG] Shutting down Flet frontend...")
         await page.window.close()
 
+    # --- HELPER WIDGETS ---
+    def create_stepper(label, current_val, on_change, step=1, min_val=1, is_float=False, vertical=False):
+        val_text = ft.Text(str(current_val), size=TXT_MED, weight="bold")
+        
+        def handle_click(delta):
+            def _click(e):
+                current = float(val_text.value) if is_float else int(val_text.value)
+                new_val = max(min_val, current + delta)
+                if is_float: 
+                    new_val = round(new_val, 1)
+                else:
+                    new_val = int(new_val)
+                    
+                val_text.value = str(new_val)
+                val_text.update()
+                on_change(new_val)
+            return _click
+
+        stepper_controls = ft.Row([
+            ft.IconButton(ft.Icons.REMOVE, on_click=handle_click(-step), icon_size=int(24 * SCALE), icon_color="white", bgcolor=BORDER),
+            # Changed back to all-lowercase 'center'
+            ft.Container(val_text, width=int(60 * SCALE), alignment=ft.Alignment.CENTER),
+            ft.IconButton(ft.Icons.ADD, on_click=handle_click(step), icon_size=int(24 * SCALE), icon_color="white", bgcolor=BORDER),
+        ], spacing=int(5 * SCALE))
+
+        if vertical:
+            return ft.Column([ft.Text(label, size=TXT_TINY, color=TEXT_MUTED), stepper_controls], spacing=int(5 * SCALE), expand=1)
+        else:
+            return ft.Row([ft.Text(label, size=TXT_MED, color=TEXT_MUTED), stepper_controls], spacing=int(10 * SCALE))
     # --- UI COMPONENTS ---
     # Added auto_scroll=True so Flet handles this natively
     log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, auto_scroll=True, expand=True)
@@ -192,16 +221,16 @@ def main(page: ft.Page):
     logic.on_grid_update = lambda: page.pubsub.send_all("refresh")
     logic.on_status_update = lambda: page.pubsub.send_all("refresh")
 
+    
     # --- DASHBOARD VIEW ---
     dashboard_view = ft.Row([
         ft.Column([
             ft.Row([
                 ft.Text("GANTRY VISUALIZER", size=TXT_MED, weight="bold", color=TEXT_MUTED),
                 ft.Row([
-                    ft.Text("Rows:", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.grid_rows), width=int(80 * SCALE), height=int(60 * SCALE), text_size=TXT_MED, content_padding=int(10 * SCALE), on_change=lambda e: logic.update_grid_size(int(e.control.value or 1), logic.grid_cols)),
-                    ft.Text("Cols:", size=TXT_MED, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.grid_cols), width=int(80 * SCALE), height=int(60 * SCALE), text_size=TXT_MED, content_padding=int(10 * SCALE), on_change=lambda e: logic.update_grid_size(logic.grid_rows, int(e.control.value or 1))),
+                    # Replaced TextFields with Steppers
+                    create_stepper("Rows:", logic.grid_rows, lambda v: logic.update_grid_size(v, logic.grid_cols), step=1, min_val=1),
+                    create_stepper("Cols:", logic.grid_cols, lambda v: logic.update_grid_size(logic.grid_rows, v), step=1, min_val=1),
                 ], spacing=int(15 * SCALE))
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Container(content=grid_display, expand=True),
@@ -272,8 +301,7 @@ def main(page: ft.Page):
                 create_device_control("gantry"), 
                 create_device_control("stirrer"),
                 create_device_control("scoop")
-            ], spacing=int(15 * SCALE)),
-            
+            ], spacing=int(15 * SCALE)),            
             # Grouped the remaining 2 devices into the second row
             ft.Row([
                 create_device_control("jetson"),
@@ -282,19 +310,15 @@ def main(page: ft.Page):
             
             ft.Divider(color=BORDER),
             ft.Text("DUMMY RESPONSE SETTINGS", size=TXT_MED, weight="bold"),
+            
+            # Replaced TextFields with vertical Steppers
             ft.Row([
-                ft.Column([
-                    ft.Text("Move Time (s):", size=TXT_TINY, color=TEXT_MUTED), # Shrunk labels
-                    ft.TextField(value=str(logic.dummy_responses["move_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"move_time": float(e.control.value) if e.control.value else 0.0})),
-                ], expand=1),
-                ft.Column([
-                    ft.Text("Analyze Time (s):", size=TXT_TINY, color=TEXT_MUTED),
-                    ft.TextField(value=str(logic.dummy_responses["analyze_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"analyze_time": float(e.control.value) if e.control.value else 0.0})),
-                ], expand=1),
+                create_stepper("Move Time (s):", logic.dummy_responses["move_time"], lambda v: logic.dummy_responses.update({"move_time": v}), step=0.5, min_val=0.0, is_float=True, vertical=True),
+                create_stepper("Analyze Time (s):", logic.dummy_responses["analyze_time"], lambda v: logic.dummy_responses.update({"analyze_time": v}), step=0.5, min_val=0.0, is_float=True, vertical=True),
             ], spacing=int(15 * SCALE)),
+            
             ft.Text("Mock Soil Types (comma separated):", size=TXT_TINY, color=TEXT_MUTED),
             ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=int(60 * SCALE), text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
-            ft.Divider(color=BORDER),
             ft.Button("EXIT TO DESKTOP", icon=ft.Icons.POWER_SETTINGS_NEW, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_exit_click, style=btn_style)
         ]
     )
