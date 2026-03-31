@@ -66,11 +66,11 @@ class SoilSenseLogic:
         
         # Individual Device Modes: "real" or "dummy"
         self.device_modes = {
-            "gantry": "real",
+            "gantry": "dummy",
             "stirrer": "dummy",
             "scoop": "dummy",
             "jetson": "dummy", # Keeping Jetson dummy until you have the script running
-            "doors": "dummy"
+            "doors": "real"
         }
         
         # Device Statuses
