@@ -235,53 +235,64 @@ def main(page: ft.Page):
 
         content_rows = [
             ft.Row([
-                ft.Text(name.upper(), size=TXT_MED, weight="bold"),
+                # Changed from TXT_MED to TXT_TINY to make the names smaller
+                ft.Text(name.upper(), size=TXT_TINY, weight="bold"),
                 dummy_switch,
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         ]
 
         if name == "doors":
-            # Add the door toggle buttons to the pre-defined row
-            door_toggle_row.controls.clear() # Clear previous in case of rebuild
+            door_toggle_row.controls.clear() 
             door_toggle_row.controls.extend([
                 ft.Button("Toggle Left", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("left"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
                 ft.Button("Toggle Right", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("right"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
             ])
             content_rows.append(door_toggle_row)
         else:
-            # Generic trigger buttons for other devices
             content_rows.append(
                 ft.Row([
                     ft.Button("Trigger 1", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD1\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
                     ft.Button("Trigger 2", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD2\n"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                ], spacing=int(20 * SCALE))
+                ], spacing=int(10 * SCALE)) # Reduced spacing
             )
 
         return ft.Container(
-            content=ft.Column(content_rows, spacing=int(20 * SCALE)),
-            padding=int(25 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER)
+            content=ft.Column(content_rows, spacing=int(10 * SCALE)), # Reduced spacing
+            padding=int(15 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER),
+            expand=True # Added expand=True so they share row width perfectly
         )
-
     debug_view = ft.ListView(
-        expand=True, spacing=int(30 * SCALE), padding=int(30 * SCALE),
+        # Reduced overall spacing and padding to fit more vertically
+        expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE),
         controls=[
-            ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_LARGE, weight="bold"),
-            ft.Row([create_device_control("gantry"), create_device_control("stirrer")], spacing=int(30 * SCALE)),
-            ft.Row([create_device_control("scoop"), create_device_control("jetson")], spacing=int(30 * SCALE)),
-            ft.Row([create_device_control("doors")], spacing=int(30 * SCALE)),
+            ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_MED, weight="bold"), # Shrunk header slightly
+            
+            # Grouped 3 devices into the first row
+            ft.Row([
+                create_device_control("gantry"), 
+                create_device_control("stirrer"),
+                create_device_control("scoop")
+            ], spacing=int(15 * SCALE)),
+            
+            # Grouped the remaining 2 devices into the second row
+            ft.Row([
+                create_device_control("jetson"),
+                create_device_control("doors")
+            ], spacing=int(15 * SCALE)),
+            
             ft.Divider(color=BORDER),
             ft.Text("DUMMY RESPONSE SETTINGS", size=TXT_MED, weight="bold"),
             ft.Row([
                 ft.Column([
-                    ft.Text("Move Time (s):", size=TXT_MED, color=TEXT_MUTED),
+                    ft.Text("Move Time (s):", size=TXT_TINY, color=TEXT_MUTED), # Shrunk labels
                     ft.TextField(value=str(logic.dummy_responses["move_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"move_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
                 ft.Column([
-                    ft.Text("Analyze Time (s):", size=TXT_MED, color=TEXT_MUTED),
+                    ft.Text("Analyze Time (s):", size=TXT_TINY, color=TEXT_MUTED),
                     ft.TextField(value=str(logic.dummy_responses["analyze_time"]), height=int(60 * SCALE), text_size=TXT_MED, input_filter=ft.InputFilter(allow=True, regex_string=r"^[0-9.]*$"), on_change=lambda e: logic.dummy_responses.update({"analyze_time": float(e.control.value) if e.control.value else 0.0})),
                 ], expand=1),
-            ], spacing=int(30 * SCALE)),
-            ft.Text("Mock Soil Types (comma separated):", size=TXT_MED, color=TEXT_MUTED),
+            ], spacing=int(15 * SCALE)),
+            ft.Text("Mock Soil Types (comma separated):", size=TXT_TINY, color=TEXT_MUTED),
             ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=int(60 * SCALE), text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
             ft.Divider(color=BORDER),
             ft.Button("EXIT TO DESKTOP", icon=ft.Icons.POWER_SETTINGS_NEW, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_exit_click, style=btn_style)
