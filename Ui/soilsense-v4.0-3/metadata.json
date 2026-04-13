@@ -1,5 +1,0 @@
-{
-  "name": "SoilSense v4.0",
-  "description": "Automated Soil Analysis System with Python Logic Engine and React UI Host. Optimized for Raspberry Pi + Jetson Nano.",
-  "requestFramePermissions": []
-}
