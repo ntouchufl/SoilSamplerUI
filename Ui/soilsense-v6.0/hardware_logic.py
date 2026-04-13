@@ -90,6 +90,8 @@ class SoilSenseLogic:
         self.currentCol = 0
         self.last_image = None
         
+        self.scoop_size = "Small" # Default preset
+        
         self.dummy_responses = {
             "soil_types": ["Loam", "Clay", "Silt", "Sand"],
             "move_time": 1.5,
@@ -326,20 +328,39 @@ class SoilSenseLogic:
 
     def communicate_with_jetson(self, command):
         if self.device_modes["jetson"] == "dummy":
-            goofy = False
+            import json
+            from datetime import datetime
             
             time.sleep(self.dummy_responses["analyze_time"])
-            res = random.choice(self.dummy_responses["soil_types"])
-            if goofy:
-                img_num = random.randint(1,5)
-                # 1. Get the directory this python file is sitting in
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                
-                # 2. Build the full, absolute path to the image
-                img = os.path.join(base_dir, "images", f"IM{img_num}.jpg")
-            else:
-                img = f"https://picsum.photos/seed/{random.random()}/400/300"
-            return res, img
+            classification = random.choice(self.dummy_responses["soil_types"])
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Generate mock JSON data matching the requested format
+            mock_data = {
+                "timestamp": timestamp,
+                "classification": classification,
+                "dark_pct": round(random.uniform(20, 40), 2),
+                "medium_pct": round(random.uniform(30, 50), 2),
+                "light_pct": round(random.uniform(10, 30), 2),
+                "avg_value": round(random.uniform(100, 150), 2),
+                "avg_r": round(random.uniform(130, 170), 2),
+                "avg_g": round(random.uniform(140, 180), 2),
+                "avg_b": round(random.uniform(140, 180), 2),
+                "dark_thresh": 85,
+                "light_thresh": 170,
+                "total_pixels": 375000,
+                "calibration_applied": True,
+                "color_calibration_applied": True,
+                "files": {
+                    "color": f"mock_path/{timestamp}_{classification.lower()}_color.jpg",
+                    "gray": f"mock_path/{timestamp}_{classification.lower()}_gray.jpg",
+                    "heatmap": f"mock_path/{timestamp}_{classification.lower()}_heatmap.jpg"
+                }
+            }
+            
+            res_json = json.dumps(mock_data)
+            img = f"https://picsum.photos/seed/{random.random()}/400/300"
+            return res_json, img
         else:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -347,16 +368,15 @@ class SoilSenseLogic:
                     s.connect((JETSON_IP, JETSON_PORT))
                     s.sendall(command.encode())
                     data = s.recv(4096).decode()
-                    parts = data.split("|")
-                    soil_type = parts[0]
-                    image_data = parts[1] if len(parts) > 1 else None
-                    return soil_type, image_data
+                    # Expecting JSON from the real Jetson now as well
+                    return data, None # Image data handling might need refinement for real Jetson
             except Exception as e:
                 self.log(f"Jetson Comm Error: {e}")
-                return "Error", None
+                return None, None
 
     def run_sequence(self):
         if self.isRunning: return
+        import json
 
         # Check if doors are open before starting
         if any(status == DeviceStatus.OFFLINE for status in self.door_statuses.values()):
@@ -384,9 +404,9 @@ class SoilSenseLogic:
                 self.log(f"Moving Gantry to [{r},{c}]")
                 self.write_hardware("gantry", f"MOVE {target_x},{target_y}\n".encode()) #THIS IS COMMAND TO GANTRY
                 
-                # 2. Scoop Down
-                self.log("Lowering scoop...")
-                self.write_hardware("scoop", b"DOWN\n") #THIS IS COMMAND TO SCOOP
+                # 2. Scoop Down with Weight Parameter
+                self.log(f"Lowering scoop ({self.scoop_size})...")
+                self.write_hardware("scoop", f"DOWN {self.scoop_size}\n".encode()) #THIS IS COMMAND TO SCOOP
                 time.sleep(1)
                 
                 # 3. Stir Sample
@@ -402,48 +422,107 @@ class SoilSenseLogic:
                 
                 # 5. Analyze with Jetson
                 self.log("Requesting Jetson Analysis...")
-                soil_type, img = self.communicate_with_jetson(f"ANALYZE {r},{c}")
-                self.soil_results[(r, c)] = soil_type
+                raw_res, img = self.communicate_with_jetson(f"ANALYZE {r},{c}")
+
+                if raw_res:
+                    try:
+                        data = json.loads(raw_res)
+                        # STORE FULL DATA dictionary instead of just the classification string
+                        self.soil_results[(r, c)] = data 
+                        classification = data.get("classification", "Unknown")
+                        self.log(f"Result [{r},{c}]: {classification} (Value: {data.get('avg_value')})")
+                    except Exception as e:
+                        self.log(f"Error parsing Jetson JSON: {e}")
+                        self.soil_results[(r, c)] = {"classification": "Error", "error": str(e)}
+                else:
+                    self.soil_results[(r, c)] = {"classification": "Offline"}
+
                 self.last_image = img
-                
+
                 if self.on_grid_update: self.on_grid_update()
 
         self.log("Grid Analysis Complete.")
         self.isRunning = False
         if self.on_grid_update: self.on_grid_update()
 
-    def toggle_dummy_door(self, door: str):
-        """Toggles the state of a dummy door ('left' or 'right')."""
-        if self.device_modes.get("doors") != "dummy":
-            self.log("Cannot toggle door state in 'real' mode.")
-            return
+    def find_sd_card_path(self):
+        """Attempts to find a mounted USB SD card/drive."""
+        import platform
+        import os
 
-        door_obj = self.left_door if door == "left" else self.right_door
+        system = platform.system()
+        search_dirs = []
 
-        if not isinstance(door_obj, MockDoor):
-            self.log(f"Error: Cannot toggle non-mock door '{door}'.")
-            return
+        if system == "Linux":
+            # Common RPi mount points
+            search_dirs = ["/media/pi", "/media"]
+        elif system == "Darwin":
+            # macOS mount points
+            search_dirs = ["/Volumes"]
 
-        door_obj.toggle()
-        state_str = "Open" if not door_obj.is_pressed else "Closed"
+        for base in search_dirs:
+            if not os.path.exists(base): continue
+            for entry in os.listdir(base):
+                full_path = os.path.join(base, entry)
+                # Skip internal drives and hidden system volumes
+                if os.path.isdir(full_path) and not entry.startswith(".") and "Macintosh" not in entry:
+                    # Return the first external-looking directory
+                    return full_path
+        return None
 
-        # The _door_monitor thread will pick up the change and update the UI status,
-        # but we can log the action immediately for responsiveness.
-        self.log(f"Dummy {door} door set to: {state_str}")
-        # We no longer need to manually trigger a UI update here, as the
-        # _door_monitor is the single source of truth and will fire the
-        # on_status_update callback when it detects the state change.
+    def export_results_csv(self):
+        """Saves the current soil_results to a CSV file on an SD card."""
+        import csv
+        from datetime import datetime
+        import os
 
+        if not self.soil_results:
+            self.log("Export failed: No results to save.")
+            return None
 
-    def stop_sequence(self):
-        self.isRunning = False
-        self.log("EMERGENCY STOP TRIGGERED. Halting hardware.")
-        
-        # Blast a STOP command to all moving parts
-        self.write_hardware("gantry", b"STOP\n")
-        self.write_hardware("stirrer", b"STOP\n")
-        self.write_hardware("scoop", b"STOP\n")
-        
-        # Update the UI to re-enable the Start button
-        if self.on_grid_update: 
-            self.on_grid_update()
+        # 1. Find the SD Card
+        sd_path = self.find_sd_card_path()
+        if sd_path:
+            self.log(f"Detected SD Card at: {sd_path}")
+            base_dir = sd_path
+        else:
+            self.log("SD Card not found! Falling back to local directory.")
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"soil_analysis_{timestamp}.csv"
+        full_filepath = os.path.join(base_dir, filename)
+
+        try:
+            with open(full_filepath, mode='w', newline='') as f:
+                writer = csv.writer(f)
+
+                # Header - Comprehensive based on Jetson JSON fields
+                header = [
+                    "Row", "Col", "Timestamp", "Classification", 
+                    "Dark%", "Medium%", "Light%", "Avg_Value", 
+                    "Avg_R", "Avg_G", "Avg_B", "Total_Pixels"
+                ]
+                writer.writerow(header)
+
+                for (r, c), data in self.soil_results.items():
+                    # Extract fields from the stored dictionary
+                    writer.writerow([
+                        r, c,
+                        data.get("timestamp", "N/A"),
+                        data.get("classification", "N/A"),
+                        data.get("dark_pct", "0"),
+                        data.get("medium_pct", "0"),
+                        data.get("light_pct", "0"),
+                        data.get("avg_value", "0"),
+                        data.get("avg_r", "0"),
+                        data.get("avg_g", "0"),
+                        data.get("avg_b", "0"),
+                        data.get("total_pixels", "0")
+                    ])
+
+            self.log(f"SUCCESS: Results exported to {full_filepath}")
+            return full_filepath
+        except Exception as e:
+            self.log(f"Export error: {e}")
+            return None

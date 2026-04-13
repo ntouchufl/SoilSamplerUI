@@ -48,6 +48,9 @@ def main(page: ft.Page):
     def handle_stop_click(e):
         logic.stop_sequence()
 
+    def handle_export_click(e):
+        logic.export_results_csv()
+
     async def handle_exit_click(e):
         print("[DEBUG] Shutting down Flet frontend...")
         await page.window.close()
@@ -82,6 +85,52 @@ def main(page: ft.Page):
         else:
             return ft.Row([ft.Text(label, size=TXT_MED, color=TEXT_MUTED), stepper_controls], spacing=int(10 * SCALE))
     # --- UI COMPONENTS ---
+    # Create stepper variables first for pubsub access
+    row_stepper = create_stepper("Rows:", logic.grid_rows, lambda v: logic.update_grid_size(v, logic.grid_cols), step=1, min_val=1)
+    col_stepper = create_stepper("Cols:", logic.grid_cols, lambda v: logic.update_grid_size(logic.grid_rows, v), step=1, min_val=1)
+
+    # --- CUSTOM SCOOP TOGGLE (AVOIDING SET SERIALIZATION) ---
+    def handle_scoop_size_click(size):
+        def _click(e):
+            logic.scoop_size = size
+            logic.log(f"Scoop size set to: {size}")
+            update_scoop_size_ui()
+            page.update()
+        return _click
+
+    scoop_size_buttons = {
+        "Small": ft.Container(
+            content=ft.Text("10g", size=TXT_TINY, weight="bold", color="black"),
+            padding=int(10 * SCALE), border_radius=int(8 * SCALE), bgcolor=ACCENT,
+            on_click=handle_scoop_size_click("Small"), alignment=ft.Alignment.CENTER
+        ),
+        "Medium": ft.Container(
+            content=ft.Text("20g", size=TXT_TINY, weight="bold"),
+            padding=int(10 * SCALE), border_radius=int(8 * SCALE), bgcolor=BORDER,
+            on_click=handle_scoop_size_click("Medium"), alignment=ft.Alignment.CENTER
+        ),
+        "Large": ft.Container(
+            content=ft.Text("30g", size=TXT_TINY, weight="bold"),
+            padding=int(10 * SCALE), border_radius=int(8 * SCALE), bgcolor=BORDER,
+            on_click=handle_scoop_size_click("Large"), alignment=ft.Alignment.CENTER
+        ),
+    }
+
+    def update_scoop_size_ui():
+        for size, btn in scoop_size_buttons.items():
+            is_selected = logic.scoop_size == size
+            btn.bgcolor = ACCENT if is_selected else BORDER
+            btn.content.color = "black" if is_selected else "white"
+            btn.disabled = logic.isRunning
+
+    scoop_toggle_row = ft.Row(
+        [scoop_size_buttons["Small"], scoop_size_buttons["Medium"], scoop_size_buttons["Large"]],
+        spacing=int(10 * SCALE)
+    )
+
+    # Pre-declare debug_view for pubsub access
+    debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
+
     # Added auto_scroll=True so Flet handles this natively
     log_column = ft.Column([], scroll=ft.ScrollMode.ALWAYS, auto_scroll=True, expand=True)
     
@@ -108,6 +157,7 @@ def main(page: ft.Page):
 
     btn_start = ft.Button("START GRID ANALYSIS", icon=ft.Icons.PLAY_ARROW, bgcolor=ACCENT, color="black", height=BTN_HEIGHT, on_click=handle_start_click, style=btn_style)
     btn_stop = ft.Button("STOP", icon=ft.Icons.STOP, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_stop_click, style=btn_style, visible=False)
+    btn_export = ft.Button("EXPORT DATA", icon=ft.Icons.SAVE_ALT, bgcolor="#3b82f6", color="white", height=BTN_HEIGHT, on_click=handle_export_click, style=btn_style)
 
     # Door Status Dots (Default: Open = Red)
     door_indicators = {
@@ -202,6 +252,13 @@ def main(page: ft.Page):
 
             btn_start.disabled = logic.isRunning
             btn_stop.visible = logic.isRunning
+            btn_export.disabled = logic.isRunning
+            
+            # Disable configuration controls while running
+            row_stepper.disabled = logic.isRunning
+            col_stepper.disabled = logic.isRunning
+            update_scoop_size_ui()
+            debug_view.disabled = logic.isRunning
             
             if logic.last_image:
                 jetson_image.src = logic.last_image
@@ -228,13 +285,13 @@ def main(page: ft.Page):
             ft.Row([
                 ft.Text("GANTRY VISUALIZER", size=TXT_MED, weight="bold", color=TEXT_MUTED),
                 ft.Row([
-                    # Replaced TextFields with Steppers
-                    create_stepper("Rows:", logic.grid_rows, lambda v: logic.update_grid_size(v, logic.grid_cols), step=1, min_val=1),
-                    create_stepper("Cols:", logic.grid_cols, lambda v: logic.update_grid_size(logic.grid_rows, v), step=1, min_val=1),
+                    ft.Row([ft.Text("Scoop Weight:", size=TXT_TINY, color=TEXT_MUTED), scoop_toggle_row]),
+                    row_stepper,
+                    col_stepper,
                 ], spacing=int(15 * SCALE))
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Container(content=grid_display, expand=True),
-            ft.Row([btn_start, btn_stop], spacing=int(20 * SCALE)),
+            ft.Row([btn_start, btn_stop, btn_export], spacing=int(20 * SCALE)),
         ], expand=2),
         ft.VerticalDivider(width=2, color=BORDER),
         ft.Column([
@@ -290,10 +347,7 @@ def main(page: ft.Page):
             padding=int(15 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER),
             expand=True # Added expand=True so they share row width perfectly
         )
-    debug_view = ft.ListView(
-        # Reduced overall spacing and padding to fit more vertically
-        expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE),
-        controls=[
+    debug_view.controls=[
             ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_MED, weight="bold"), # Shrunk header slightly
             
             # Grouped 3 devices into the first row
@@ -321,7 +375,6 @@ def main(page: ft.Page):
             ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=int(60 * SCALE), text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
             ft.Button("EXIT TO DESKTOP", icon=ft.Icons.POWER_SETTINGS_NEW, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_exit_click, style=btn_style)
         ]
-    )
 
     # --- TAB SYSTEM ---
     tab_system = ft.Tabs(

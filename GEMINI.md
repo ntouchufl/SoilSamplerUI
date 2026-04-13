@@ -16,13 +16,24 @@ Automate soil analysis using a mechanical gantry and integrated sampling tools. 
 - **`Ui/soilsense-v6.0/hardware_logic.py`**: Core engine managing state, hardware communication, and simulation logic.
 - **`requirements.txt`**: Minimal dependency list (Flet, PySerial).
 - **`Ui/soilsense-v6.0/images/`**: Source folder for soil images used in the Jetson analysis simulation.
+- **`soil_analysis_*.csv`**: Output data files (exported to USB SD card if available).
 
 ## 🧪 Hardware Protocols
 - **Serial Ports:** Baud rates are 115200 (Gantry) and 9600 (Stirrer/Scoop).
 - **Control Commands:**
   - **Gantry:** `MOVE x,y\n`, `STOP\n`
   - **Stirrer:** `START\n`, `STOP\n`
-  - **Scoop:** `DOWN\n`, `UP\n`, `STOP\n`
+  - **Scoop:** `DOWN <Small|Medium|Large>\n`, `UP\n`, `STOP\n`
+- **Jetson Interface:** Communicates via TCP Socket. Expects/Sends JSON data.
+  - **Sample Response:**
+    ```json
+    {
+      "timestamp": "20260406_161322",
+      "classification": "Organic",
+      "avg_value": 120.68,
+      ...
+    }
+    ```
 - **Acknowledgment:** Hardware is expected to respond with `Finished\n` upon completion of most tasks.
 
 ## 🛠 Working Guidelines
