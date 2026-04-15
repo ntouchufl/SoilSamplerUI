@@ -62,8 +62,8 @@ class MockDoor:
 class SoilSenseLogic:
     def __init__(self):
         # Grid Configuration
-        self.grid_rows = 3
-        self.grid_cols = 3
+        self.grid_rows = 8
+        self.grid_cols = 5
         
         # Individual Device Modes: "real" or "dummy"
         self.device_modes = {
@@ -215,6 +215,15 @@ class SoilSenseLogic:
         self.device_modes[device] = mode
         self.init_hardware()
         self.log(f"{device.capitalize()} set to {mode} mode.")
+
+    def toggle_dummy_door(self, side):
+        if side == "left" and isinstance(self.left_door, MockDoor):
+            self.left_door.toggle()
+        elif side == "right" and isinstance(self.right_door, MockDoor):
+            self.right_door.toggle()
+        
+        if self.on_status_update:
+            self.on_status_update()
 
     def update_grid_size(self, rows, cols):
         self.grid_rows = rows
@@ -373,6 +382,17 @@ class SoilSenseLogic:
             except Exception as e:
                 self.log(f"Jetson Comm Error: {e}")
                 return None, None
+
+    def stop_sequence(self):
+        if not self.isRunning:
+            return
+        self.isRunning = False
+        self.log("Stopping sequence and emergency stopping all hardware...")
+        self.write_hardware("gantry", b"STOP\n")
+        self.write_hardware("stirrer", b"STOP\n")
+        self.write_hardware("scoop", b"STOP\n")
+        if self.on_grid_update:
+            self.on_grid_update()
 
     def run_sequence(self):
         if self.isRunning: return

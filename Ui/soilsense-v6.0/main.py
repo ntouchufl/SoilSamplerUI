@@ -242,13 +242,19 @@ def main(page: ft.Page):
                 for c in range(logic.grid_cols):
                     cell = grid_cells.get((r, c))
                     if not cell: continue
-                    res = logic.soil_results.get((r, c))
+                    res_data = logic.soil_results.get((r, c))
                     is_active = logic.isRunning and logic.currentRow == r and logic.currentCol == c
                     
-                    cell["txt"].value = res if res else "-"
-                    cell["txt"].color = "black" if is_active else (ACCENT if res else "white")
+                    # Extract classification from the stored data dictionary
+                    if res_data and isinstance(res_data, dict):
+                        display_val = res_data.get("classification", "Unknown")
+                    else:
+                        display_val = "-"
+                    
+                    cell["txt"].value = display_val
+                    cell["txt"].color = "black" if is_active else (ACCENT if res_data else "white")
                     cell["box"].bgcolor = ACCENT if is_active else BG_CARD
-                    cell["box"].border = ft.Border.all(2, ACCENT if is_active or res else BORDER)
+                    cell["box"].border = ft.Border.all(2, ACCENT if is_active or res_data else BORDER)
 
             btn_start.disabled = logic.isRunning
             btn_stop.visible = logic.isRunning
