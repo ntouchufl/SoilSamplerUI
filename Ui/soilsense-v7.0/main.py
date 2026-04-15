@@ -22,6 +22,9 @@ def main(page: ft.Page):
     page.padding = int(40 * SCALE)
 
     logic = SoilSenseLogic()
+    
+    # UI State Tracker for Hardware Safety Interlocks
+    ui_state = {"gantry_zeroed": False}
 
     # Styling
     ACCENT = "#00ff41"
@@ -38,12 +41,18 @@ def main(page: ft.Page):
 
     def handle_stop_click(e):
         logic.stop_sequence()
+        # Revoke the zeroed status on stop/e-stop
+        ui_state["gantry_zeroed"] = False 
+        page.pubsub.send_all("refresh")
 
     def handle_export_click(e):
         logic.export_results_csv()
 
     def handle_zero_gantry_click(e):
         logic.zero_gantry()
+        # Grant the zeroed status and unlock system
+        ui_state["gantry_zeroed"] = True
+        page.pubsub.send_all("refresh")
 
     async def handle_exit_click(e):
         print("[DEBUG] Shutting down Flet frontend...")
@@ -104,13 +113,14 @@ def main(page: ft.Page):
         return _click
 
     def create_kp_btn(text_val, text_color="white", bgcolor=BORDER):
-        # FIX: Removed the 'text=' kwarg crash and passed an ft.Text object to force perfect font sizing
-        return ft.Button(
-            content=ft.Text(text_val, size=TXT_MED, weight="bold", color=text_color), 
+        return ft.Container(
+            content=ft.Text(text_val, size=TXT_MED, weight="bold", color=text_color, text_align=ft.TextAlign.CENTER), 
+            alignment=ft.Alignment.CENTER,
             on_click=handle_keypad_click(text_val), 
             width=int(100*SCALE), height=int(90*SCALE), 
             bgcolor=bgcolor, 
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=int(8*SCALE)))
+            border_radius=int(8*SCALE),
+            ink=True
         )
 
     kp_spacing = int(15*SCALE)
@@ -160,21 +170,38 @@ def main(page: ft.Page):
         if custom_weight_input.value.isdigit():
             set_weight(custom_weight_input.value)
 
-    btn_style_menu = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=int(8*SCALE)))
+    def create_weight_btn(text_val, weight_val):
+        return ft.Container(
+            content=ft.Text(text_val, size=TXT_MED, weight="bold", color="white", text_align=ft.TextAlign.CENTER),
+            alignment=ft.Alignment.CENTER,
+            height=BTN_HEIGHT,
+            bgcolor=BORDER,
+            border_radius=int(8*SCALE),
+            on_click=lambda e: set_weight(weight_val),
+            ink=True
+        )
     
     weight_dialog = ft.AlertDialog(
         title=ft.Text("Select Target Weight", size=TXT_LARGE, weight="bold"),
         content=ft.Container(
-            width=int(500*SCALE), # FIX: Expanded container width to give buttons more space
+            width=int(500*SCALE),
             content=ft.Column([
-                # FIX: Passed text via `content` to prevent clipping
-                ft.Button(content=ft.Text("10g (Small)", size=TXT_MED, weight="bold", color="white"), on_click=lambda e: set_weight(10), height=BTN_HEIGHT, bgcolor=BORDER, style=btn_style_menu),
-                ft.Button(content=ft.Text("20g (Medium)", size=TXT_MED, weight="bold", color="white"), on_click=lambda e: set_weight(20), height=BTN_HEIGHT, bgcolor=BORDER, style=btn_style_menu),
-                ft.Button(content=ft.Text("30g (Large)", size=TXT_MED, weight="bold", color="white"), on_click=lambda e: set_weight(30), height=BTN_HEIGHT, bgcolor=BORDER, style=btn_style_menu),
+                create_weight_btn("10g (Small)", 10),
+                create_weight_btn("20g (Medium)", 20),
+                create_weight_btn("30g (Large)", 30),
                 ft.Divider(color=BORDER, height=int(20*SCALE)),
                 ft.Row([
                     custom_weight_input,
-                    ft.Button(content=ft.Text("APPLY", size=TXT_MED, weight="bold", color="black"), on_click=handle_custom_weight, bgcolor=ACCENT, height=int(80*SCALE), expand=True, style=btn_style_menu)
+                    ft.Container(
+                        content=ft.Text("APPLY", size=TXT_MED, weight="bold", color="black", text_align=ft.TextAlign.CENTER),
+                        alignment=ft.Alignment.CENTER,
+                        height=int(80*SCALE),
+                        bgcolor=ACCENT,
+                        border_radius=int(8*SCALE),
+                        on_click=handle_custom_weight,
+                        ink=True,
+                        expand=True
+                    )
                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=int(15*SCALE))
             ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH) 
         )
@@ -197,7 +224,7 @@ def main(page: ft.Page):
     btn_export = ft.Button("EXPORT", icon=ft.Icons.SAVE_ALT, bgcolor="#3b82f6", color="white", height=BTN_HEIGHT, on_click=handle_export_click, style=btn_style)
     btn_samples = ft.Button("SAMPLES", icon=ft.Icons.KEYBOARD, bgcolor=BORDER, color="white", height=BTN_HEIGHT, on_click=open_samples_keypad, style=btn_style)
     btn_weight = ft.Button("WEIGHT", icon=ft.Icons.SCALE, bgcolor=BORDER, color="white", height=BTN_HEIGHT, on_click=open_weight_menu, style=btn_style)
-    btn_zero_gantry = ft.Button("ZERO", icon=ft.Icons.HOME, bgcolor=BORDER, color="white", height=BTN_HEIGHT, on_click=handle_zero_gantry_click, style=btn_style)
+    btn_zero_gantry = ft.Button("ZERO FIRST", icon=ft.Icons.HOME, bgcolor="#f59e0b", color="black", height=BTN_HEIGHT, on_click=handle_zero_gantry_click, style=btn_style)
 
     log_column = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
     total_samples_text = ft.Text(f"Target: {logic.total_samples} samples | {logic.soil_weight}g", size=TXT_MED, color=TEXT_MUTED)
@@ -260,7 +287,21 @@ def main(page: ft.Page):
             door_indicators["left"].bgcolor = logic.door_statuses["left"].value
             door_indicators["right"].bgcolor = logic.door_statuses["right"].value
 
-            btn_start.disabled = logic.isRunning
+            # Safety Interlock & Visual Feedback Logic
+            if logic.isRunning:
+                btn_start.text = "RUNNING"
+                btn_start.disabled = True
+            elif not ui_state["gantry_zeroed"]:
+                btn_start.text = "ZERO FIRST"
+                btn_start.disabled = True
+                btn_zero_gantry.bgcolor = "#f59e0b" # Bright amber warning
+                btn_zero_gantry.color = "black"
+            else:
+                btn_start.text = "START"
+                btn_start.disabled = False
+                btn_zero_gantry.bgcolor = BORDER # Return to normal dark gray
+                btn_zero_gantry.color = "white"
+
             btn_stop.visible = logic.isRunning
             btn_samples.disabled = logic.isRunning
             btn_weight.disabled = logic.isRunning
