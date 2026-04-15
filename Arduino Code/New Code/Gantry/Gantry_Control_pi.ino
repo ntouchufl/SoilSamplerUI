@@ -2,13 +2,8 @@
 
 AccelStepper m1(AccelStepper::DRIVER, M1_STEP_PIN, M1_DIR_PIN);
 AccelStepper m2(AccelStepper::DRIVER, M2_STEP_PIN, M2_DIR_PIN);  
-bool isRunning = false, dryRun = false, infiniteLoop = false, monitorActive = false, motorsEnabled = false, manualWaiting = false;
+bool isRunning = false, motorsEnabled = false;
 bool emergencyHomingNeeded = false;
-bool regularMode = false;
-int currentSample = 0;
-unsigned long lastDiagTime = 0;
-unsigned long sequenceStartTime = 0;
-unsigned long pausedTime = 0;
 
 const Point tubeList[TUBE_COUNT] = {
 {107.5,100.0},{162.5,100.0},{217.5,100.0},{272.5,100.0},{327.5,100.0},{382.5,100.0},{437.5,100.0},{492.5,100.0},
@@ -41,10 +36,67 @@ void loop() {
         String cmd = Serial.readStringUntil('\n');
         executeCmd(cmd);
     }
-
 }
 
 void executeCmd(String cmd) {
     cmd.trim();
     if (cmd.length() == 0) return;
     
+    isRunning = true; 
+    emergencyHomingNeeded = false; // Reset for new command
+
+    if (cmd[0] == 'B' || cmd[0] == 'T') {
+        int x = cmd[1] - '0';
+        int y = cmd[2] - '0';
+        int index = getSampleIndex(x, y);
+        if (index < 0) {
+            Serial.println(F("F1")); // INDEX OUT OF RANGE
+            isRunning = false;
+            return;
+        }
+        
+        Point target = (cmd[0] == 'B') ? sampleList[index] : tubeList[index];
+        unsigned long startTime = millis();
+        moveGantry(target.x, target.y);
+        
+        if (emergencyHomingNeeded) {
+            Serial.println(F("F2")); // LIMIT HIT
+        } else {
+            Serial.print(F("Y"));
+            Serial.println(millis() - startTime);
+        }
+    } else if (cmd[0] == 'H') {
+        unsigned long startTime = millis();
+        physicsHome();
+        if (emergencyHomingNeeded) {
+            Serial.println(F("F2"));
+        } else {
+            Serial.print(F("Y"));
+            Serial.println(millis() - startTime);
+        }
+    } else if (cmd[0] == 'Z') {
+        m1.setCurrentPosition(0);
+        m2.setCurrentPosition(0);
+        Serial.println(F("Y0"));
+    } else if (cmd[0] == 'S') {
+        globalInterrupt();
+        Serial.println(F("Y0"));
+    } else if (cmd[0] == 'M') {
+        if (cmd[1] == '1') {
+            setMotors(true);
+            Serial.println(F("Y0"));
+        } else {
+            setMotors(false);
+            Serial.println(F("Y0"));
+        }
+    } else {
+        Serial.println(F("F0")); // UNKNOWN COMMAND
+    }
+    
+    isRunning = false;
+}
+
+int getSampleIndex(int x, int y) {
+    if (x < 0 || x >= 10 || y < 0 || y >= 4) return -1; 
+    return (y * 10) + x;
+}

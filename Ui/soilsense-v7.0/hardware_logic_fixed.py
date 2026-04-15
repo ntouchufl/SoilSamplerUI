@@ -30,23 +30,19 @@ class MockSerial:
         self.name = name
         self._mock_response_queue = [] # To simulate responses
         self.dummy_responses = {} # This will be set by init_hardware to pass the reference
-        
     def write(self, data):
-        # Safely handle both string and byte commands
-        command = data.decode().strip() if isinstance(data, bytes) else str(data).strip()
+        command = data.decode().strip()
         print(f"[MOCK {self.name}] Sending: {command}")
-        
-        # Simulate hardware sequence time
-        time.sleep(self.dummy_responses.get("move_time", 1.5))
-        
-        # FIX: Send standard success code "Y" + elapsed ms instead of "Finished"
-        self._mock_response_queue.append("Y1500") 
+        # Simulate an ACK/response for common commands
+        time.sleep(self.dummy_responses["move_time"])
+        self._mock_response_queue.append("Finished
+") # Default ACK
 
     def readline(self):
         if self._mock_response_queue:
             response = self._mock_response_queue.pop(0)
             print(f"[MOCK {self.name}] Receiving: {response.strip()}")
-            return response.encode() if isinstance(response, str) else response
+            return response.encode()
         return b"" # Simulate no data if queue is empty
 
     def close(self):
@@ -359,9 +355,12 @@ class SoilSenseLogic:
         if not self.isRunning: return
         self.isRunning = False
         self.log("Stopping sequence and emergency stopping all hardware...")
-        self.write_hardware("gantry", "S")
-        self.write_hardware("stirrer", "STOP")
-        self.write_hardware("scoop", "S")
+        self.write_hardware("gantry", "S
+")
+        self.write_hardware("stirrer", "STOP
+")
+        self.write_hardware("scoop", "S
+")
         if self.on_sequence_update: self.on_sequence_update()
 
     def run_sequence(self):
@@ -386,14 +385,17 @@ class SoilSenseLogic:
             # 1. Gantry move stirrer to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Stirrer to Bag ({x},{y})...")
-            self.write_hardware("gantry", f"B{x}{y}")
+            self.write_hardware("gantry", f"B{x}{y}
+")
             
             # 2. Stir + take image
             self.scooper_status = "Stirring"
             self.log(f"Sample {i+1}: Stirring...")
-            self.write_hardware("stirrer", "START")
+            self.write_hardware("stirrer", "START
+")
             time.sleep(2)
-            self.write_hardware("stirrer", "STOP")
+            self.write_hardware("stirrer", "STOP
+")
             
             self.scooper_status = "Analyzing"
             self.log(f"Sample {i+1}: Analyzing...")
@@ -412,44 +414,57 @@ class SoilSenseLogic:
             # 3. Gantry move scooper to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Scooper to Bag ({x},{y})...")
-            self.write_hardware("gantry", f"B{x}{y}")
+            self.write_hardware("gantry", f"B{x}{y}
+")
             
             # 4. scoop() sequence
             self.scooper_status = "Scooping"
             self.log(f"Sample {i+1}: Performing Scoop Sequence...")
-            self.write_hardware("scoop", "U")  # Open scoop
-            self.write_hardware("scoop", "FD") # Flip down
-            res = self.write_hardware("scoop", "L")  # Lower
+            self.write_hardware("scoop", "U
+")  # Open scoop
+            self.write_hardware("scoop", "FD
+") # Flip down
+            res = self.write_hardware("scoop", "L
+")  # Lower
             
             if res == "F1":
                 self.log(f"WARNING: Bag {i+1} appears EMPTY. Skipping.")
-                self.write_hardware("scoop", "R")
-                self.write_hardware("scoop", "FU")
+                self.write_hardware("scoop", "R
+")
+                self.write_hardware("scoop", "FU
+")
                 continue
 
-            self.write_hardware("scoop", "S")  # Close scoop
-            self.write_hardware("scoop", "R")  # Raise
-            self.write_hardware("scoop", "FU") # Flip up (Dispenser bottom)
+            self.write_hardware("scoop", "S
+")  # Close scoop
+            self.write_hardware("scoop", "R
+")  # Raise
+            self.write_hardware("scoop", "FU
+") # Flip up (Dispenser bottom)
 
             # 5. Gantry move to tube
             self.scooper_status = "Moving to Tube"
             self.log(f"Sample {i+1}: Moving to Tube ({x},{y})...")
-            self.write_hardware("gantry", f"T{x}{y}")
+            self.write_hardware("gantry", f"T{x}{y}
+")
 
             # 6. dispense(soilWeight)
             self.scooper_status = "Dispensing"
             self.log(f"Sample {i+1}: Dispensing {self.soil_weight}g...")
-            self.write_hardware("scoop", f"D{self.soil_weight}")
+            self.write_hardware("scoop", f"D{self.soil_weight}
+")
 
             # 7. gantry move scoop back to bag
             self.scooper_status = "Returning to Bag"
             self.log(f"Sample {i+1}: Returning to Bag to clear scoop...")
-            self.write_hardware("gantry", f"B{x}{y}")
+            self.write_hardware("gantry", f"B{x}{y}
+")
 
             # 8. empty()
             self.scooper_status = "Emptying"
             self.log(f"Sample {i+1}: Vacating remaining soil...")
-            self.write_hardware("scoop", "E")
+            self.write_hardware("scoop", "E
+")
 
         self.scooper_status = "Idle"
         self.log("Analysis Complete.")
@@ -494,7 +509,3 @@ class SoilSenseLogic:
                     # Return the first external-looking directory
                     return full_path
         return None
-
-    def zero_gantry(self):
-        self.log("Zeroing gantry...")
-        self.write_hardware("gantry", "Z")

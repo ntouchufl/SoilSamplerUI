@@ -47,3 +47,11 @@ Automate soil analysis using a mechanical gantry and integrated sampling tools. 
 - **Sequence Refinement:** Optimize the `run_sequence` method for better performance or error handling.
 - **Jetson Integration:** Replace the dummy Jetson communication with real computer vision API calls.
 - **UI Enhancements:** Improve the "Dashboard" visualization or add data export features.
+
+
+Do not change v6.0. You can use it as a reference but that is a working version. Only modify v7.0
+
+ft.Alignment not ft.alignment this goes for all parameters
+alignment=ft.Alignment.CENTER is correct
+
+"When rewriting the any function, do not try to escape the newlines with \\n. Instead, use Python multi-line triple quotes (''' or \"\"\") or a raw string (r'...') for the string parameter."

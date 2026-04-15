@@ -28,12 +28,7 @@ const float AXIS_X_MAX_MM = 800.0;
 const float AXIS_Y_MAX_MM = 1750.0;  
 // Global State
 extern AccelStepper m1, m2;
-extern bool isRunning, dryRun, infiniteLoop, monitorActive, motorsEnabled, manualWaiting;
-extern bool regularMode;
-extern int currentSample;
-extern unsigned long lastDiagTime;
-extern unsigned long sequenceStartTime;
-extern unsigned long pausedTime;
+extern bool isRunning, motorsEnabled;
 extern bool emergencyHomingNeeded;
 
 const int TUBE_COUNT = 40;
@@ -42,15 +37,10 @@ const int TOTAL_POINTS = 80;
 extern const Point tubeList[TUBE_COUNT];
 extern const Point sampleList[SAMPLE_COUNT];  
 // Prototypes
-void printMenu();
-void handleMenu();
 void executeCmd(String cmd);
 void moveGantry(float tx, float ty);
-void processManual(String coordinates);
 void physicsHome();
 void emergencyHome();
-void checkHealth();
-void fastBinaryDiag();
 void setMotors(bool on);
 void waitForMotors();
 void checkLimits();
