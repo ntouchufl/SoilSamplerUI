@@ -245,8 +245,7 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Image(
-        src=None,  # MUST be explicitly None so it doesn't block the stream
-        src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
+        src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", # Flet handles base64 strings in 'src' too
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         fit=ft.BoxFit.CONTAIN,
