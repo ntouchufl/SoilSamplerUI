@@ -243,7 +243,7 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Image(
-        src="https://picsum.photos/seed/soil/400/300", 
+        src="http://10.42.0.76:5000/video_feed",   # <--- Updated to point to the live Jetson Stream
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         fit=ft.BoxFit.CONTAIN,
