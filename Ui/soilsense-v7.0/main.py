@@ -18,7 +18,7 @@ def main(page: ft.Page):
     else:
         SCALE = 1.0
         page.window.full_screen = True
-        page.window.resizable = False
+        #page.window.resizable = False
     page.padding = int(40 * SCALE)
 
     logic = SoilSenseLogic()

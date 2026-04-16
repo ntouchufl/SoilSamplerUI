@@ -3,7 +3,7 @@ import random
 import time
 
 # Host IP must match JETSON_IP in your hardware_logic.py
-HOST = '192.168.1.100' 
+HOST = '10.42.0.75' 
 # Port must match JETSON_PORT in your hardware_logic.py
 PORT = 5005
 
