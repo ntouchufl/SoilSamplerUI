@@ -244,13 +244,13 @@ def main(page: ft.Page):
     }
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
-    camera_view = ft.Container(
-        content=ft.Text("JETSON LIVE FEED", color=ft.Colors.GREY_700),
+    camera_view = ft.Image(
+        src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
-        bgcolor=ft.Colors.BLACK,
+        bgcolor=ft.colors.BLACK,
         border_radius=int(12 * SCALE),
-        alignment=ft.Alignment.CENTER
+        alignment=ft.alignment.center
     )
     
     # Swapped Column for ListView to fix the rendering bug
@@ -495,39 +495,41 @@ def main(page: ft.Page):
     page.add(header, ft.Divider(color=BORDER), tabs)
     handle_refresh("refresh")
 
-    import subprocess
+    import requests # Make sure to: pip install requests
 
-    def start_camera_stream():
-        def stream_loop():
-            # The URL from your Jetson
-            url = "http://10.42.0.76:5000/video_feed"
-            
-            # This command launches VLC in a 'dummy' interface mode (no menus)
-            # It sets the window size to match your UI's camera box
-            vlc_cmd = [
-            'cvlc',
-            '--no-video-title-show',
-            '--no-embedded-video',
-            '--decorations',           # This removes the close/minimize buttons
-            '--video-on-top',          # Keeps it from falling behind the Flet UI
-            '--width', str(int(400 * SCALE)),
-            '--height', str(int(300 * SCALE)),
-            '--video-x', '100',        # Adjust these coordinates to match 
-            '--video-y', '200',        # where your black Container sits
-            url
-        ]
-            
+def start_camera_stream():
+    def stream_loop():
+        url = "http://10.42.0.76:5000/video_feed"
+        while True:
             try:
-                # Launch VLC as a separate process
-                subprocess.Popen(vlc_cmd)
-                print("VLC Video Pop-out Launched!")
+                # Use a session for better persistence
+                with requests.get(url, stream=True, timeout=5) as r:
+                    iterator = r.iter_content(chunk_size=1024)
+                    bytes_data = b''
+                    for chunk in iterator:
+                        bytes_data += chunk
+                        a = bytes_data.find(b'\xff\xd8') # JPEG Start
+                        b = bytes_data.find(b'\xff\xd9') # JPEG End
+                        
+                        if a != -1 and b != -1:
+                            jpg = bytes_data[a:b+2]
+                            bytes_data = bytes_data[b+2:]
+                            
+                            # Convert to Base64
+                            base64_img = base64.b64encode(jpg).decode('utf-8')
+                            
+                            # Update UI
+                            camera_view.src_base64 = base64_img
+                            camera_view.update()
+                            
+                            # SLOW DOWN the feed to 10 FPS to prevent UI lockup
+                            time.sleep(0.1) 
+                            
             except Exception as e:
-                print(f"Failed to launch VLC: {e}")
+                print(f"Stream connection lost: {e}")
+                time.sleep(2) # Wait before retrying
 
-        # Run it once at boot
-        threading.Thread(target=stream_loop, daemon=True).start()
-
-    start_camera_stream()
+    threading.Thread(target=stream_loop, daemon=True).start()
 
 if __name__ == "__main__":
     ft.run(main)
