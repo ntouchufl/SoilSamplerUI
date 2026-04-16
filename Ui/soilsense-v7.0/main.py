@@ -505,13 +505,17 @@ def main(page: ft.Page):
             # This command launches VLC in a 'dummy' interface mode (no menus)
             # It sets the window size to match your UI's camera box
             vlc_cmd = [
-                'cvlc',
-                '--no-video-title-show',
-                '--qt-start-minimized',
-                '--width', str(int(400 * SCALE)),
-                '--height', str(int(300 * SCALE)),
-                url
-            ]
+            'cvlc',
+            '--no-video-title-show',
+            '--no-embedded-video',
+            '--decorations',           # This removes the close/minimize buttons
+            '--video-on-top',          # Keeps it from falling behind the Flet UI
+            '--width', str(int(400 * SCALE)),
+            '--height', str(int(300 * SCALE)),
+            '--video-x', '100',        # Adjust these coordinates to match 
+            '--video-y', '200',        # where your black Container sits
+            url
+        ]
             
             try:
                 # Launch VLC as a separate process
