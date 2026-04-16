@@ -249,7 +249,7 @@ def main(page: ft.Page):
         src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
-        bgcolor=ft.colors.BLACK,
+        bgcolor=ft.Colors.BLACK,
         border_radius=int(12 * SCALE),
         alignment=ft.alignment.center
     )
