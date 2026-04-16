@@ -245,7 +245,7 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Container(
-        content=ft.Text("JETSON LIVE FEED", color=ft.colors.GREY_700),
+        content=ft.Text("JETSON LIVE FEED", color=ft.Colors.GREY_700),
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         bgcolor=ft.colors.BLACK,
