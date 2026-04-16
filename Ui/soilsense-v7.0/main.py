@@ -183,6 +183,29 @@ def main(page: ft.Page):
             on_click=lambda e: set_weight(weight_val),
             ink=True
         )
+    def start_camera_stream():
+        def stream_loop():
+            url = "http://10.42.0.76:5000/video_feed"
+            while True:
+                try:
+                    with requests.get(url, stream=True, timeout=5) as r:
+                        bytes_data = b''
+                        for chunk in r.iter_content(chunk_size=1024):
+                            bytes_data += chunk
+                            a = bytes_data.find(b'\xff\xd8')
+                            b_end = bytes_data.find(b'\xff\xd9')
+                            if a != -1 and b_end != -1:
+                                jpg = bytes_data[a:b_end+2]
+                                bytes_data = bytes_data[b_end+2:]
+                                camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
+                                camera_view.src = None  # clear file-path src so base64 takes priority
+                                camera_view.update()
+                                time.sleep(0.1)
+                except Exception as e:
+                    print(f"[STREAM] Connection lost: {e}")
+                    time.sleep(2)
+
+        threading.Thread(target=stream_loop, daemon=True).start()
     
     weight_dialog = ft.AlertDialog(
         title=ft.Text("Select Target Weight", size=TXT_LARGE, weight="bold"),
@@ -249,14 +272,14 @@ def main(page: ft.Page):
     src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
     width=int(400 * SCALE),
     height=int(300 * SCALE),
-    fit=ft.ImageFit.CONTAIN,
+    fit="contain",
 )
 
     camera_view_container = ft.Container(
         content=camera_view,
         width=int(400 * SCALE),
         height=int(300 * SCALE),
-        bgcolor=ft.colors.BLACK,
+        bgcolor=ft.Colors.BLACK,
         border_radius=int(12 * SCALE),
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,  # enforces the border radius on the image
     )
@@ -506,29 +529,7 @@ def main(page: ft.Page):
 
  # Make sure to: pip install requests
 
-    def start_camera_stream():
-        def stream_loop():
-            url = "http://10.42.0.76:5000/video_feed"
-            while True:
-                try:
-                    with requests.get(url, stream=True, timeout=5) as r:
-                        bytes_data = b''
-                        for chunk in r.iter_content(chunk_size=1024):
-                            bytes_data += chunk
-                            a = bytes_data.find(b'\xff\xd8')
-                            b_end = bytes_data.find(b'\xff\xd9')
-                            if a != -1 and b_end != -1:
-                                jpg = bytes_data[a:b_end+2]
-                                bytes_data = bytes_data[b_end+2:]
-                                camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
-                                camera_view.src = None  # clear file-path src so base64 takes priority
-                                camera_view.update()
-                                time.sleep(0.1)
-                except Exception as e:
-                    print(f"[STREAM] Connection lost: {e}")
-                    time.sleep(2)
-
-        threading.Thread(target=stream_loop, daemon=True).start()
+    
 
 if __name__ == "__main__":
     ft.run(main)
