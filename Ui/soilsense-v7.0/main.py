@@ -244,12 +244,13 @@ def main(page: ft.Page):
     }
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
-    camera_view = ft.Image(
-        src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", # Flet handles base64 strings in 'src' too
+    camera_view = ft.Container(
+        content=ft.Text("JETSON LIVE FEED", color=ft.colors.GREY_700),
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
-        fit=ft.BoxFit.CONTAIN,
-        border_radius=int(12 * SCALE)
+        bgcolor=ft.colors.BLACK,
+        border_radius=int(12 * SCALE),
+        alignment=ft.alignment.center
     )
     
     # Swapped Column for ListView to fix the rendering bug
@@ -494,29 +495,32 @@ def main(page: ft.Page):
     page.add(header, ft.Divider(color=BORDER), tabs)
     handle_refresh("refresh")
 
+    import subprocess
+
     def start_camera_stream():
         def stream_loop():
+            # The URL from your Jetson
             url = "http://10.42.0.76:5000/video_feed"
-            while True:
-                try:
-                    stream = urllib.request.urlopen(url, timeout=3)
-                    bytes_data = b''
-                    while True:
-                        bytes_data += stream.read(8192)
-                        a = bytes_data.find(b'\xff\xd8')
-                        b = bytes_data.find(b'\xff\xd9')
-                        if a != -1 and b != -1:
-                            jpg = bytes_data[a:b+2]
-                            bytes_data = bytes_data[b+2:]
-                            try:
-                                # Use the property setter instead of the constructor
-                                camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
-                                camera_view.update()
-                            except Exception as e:
-                                print(f"Flet Update Error: {e}")
-                except Exception:
-                    time.sleep(2)
+            
+            # This command launches VLC in a 'dummy' interface mode (no menus)
+            # It sets the window size to match your UI's camera box
+            vlc_cmd = [
+                'cvlc',
+                '--no-video-title-show',
+                '--qt-start-minimized',
+                '--width', str(int(400 * SCALE)),
+                '--height', str(int(300 * SCALE)),
+                url
+            ]
+            
+            try:
+                # Launch VLC as a separate process
+                subprocess.Popen(vlc_cmd)
+                print("VLC Video Pop-out Launched!")
+            except Exception as e:
+                print(f"Failed to launch VLC: {e}")
 
+        # Run it once at boot
         threading.Thread(target=stream_loop, daemon=True).start()
 
     start_camera_stream()
