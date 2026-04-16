@@ -251,7 +251,7 @@ def main(page: ft.Page):
         height=int(300 * SCALE), 
         bgcolor=ft.Colors.BLACK,
         border_radius=int(12 * SCALE),
-        alignment=ft.alignment.center
+        alignment=ft.Alignment.CENTER
     )
     start_camera_stream()
     
