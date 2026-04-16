@@ -1,6 +1,9 @@
 import flet as ft
 import threading
 import platform
+import base64
+import urllib.request
+import time
 from hardware_logic import SoilSenseLogic, DeviceStatus
 
 def main(page: ft.Page):
@@ -14,12 +17,11 @@ def main(page: ft.Page):
         SCALE = 0.5
         page.window.width, page.window.height = int(PI_WIDTH * SCALE), int(PI_HEIGHT * SCALE)
         page.window.full_screen = False
-        page.window.resizable = False
+        page.window.resizable = False  # Keep this locked for Mac testing
     else:
         SCALE = 1.0
         page.window.full_screen = True
-        #page.window.resizable = False
-    page.padding = int(40 * SCALE)
+        # Notice resizable is removed here so the Pi can expand!
 
     logic = SoilSenseLogic()
     
@@ -243,13 +245,14 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Image(
-        src="http://10.42.0.76:5000/video_feed",   # <--- Updated to point to the live Jetson Stream
+        src=None, # Removed the URL so Flet doesn't try to load it
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         fit=ft.BoxFit.CONTAIN,
         border_radius=int(12 * SCALE)
     )
-
+    
+    # Swapped Column for ListView to fix the rendering bug
     soil_results_view = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
 
     # --- ACTION HIGHLIGHTER LIST ---
@@ -490,6 +493,32 @@ def main(page: ft.Page):
 
     page.add(header, ft.Divider(color=BORDER), tabs)
     handle_refresh("refresh")
+
+    def start_camera_stream():
+        def stream_loop():
+            url = "http://10.42.0.76:5000/video_feed"
+            while True:
+                try:
+                    stream = urllib.request.urlopen(url, timeout=3)
+                    bytes_data = b''
+                    while True:
+                        bytes_data += stream.read(8192)
+                        a = bytes_data.find(b'\xff\xd8')
+                        b = bytes_data.find(b'\xff\xd9')
+                        if a != -1 and b != -1:
+                            jpg = bytes_data[a:b+2]
+                            bytes_data = bytes_data[b+2:]
+                            try:
+                                camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
+                                camera_view.update()
+                            except:
+                                pass
+                except Exception:
+                    time.sleep(2)
+
+        threading.Thread(target=stream_loop, daemon=True).start()
+
+    start_camera_stream()
 
 if __name__ == "__main__":
     ft.run(main)
