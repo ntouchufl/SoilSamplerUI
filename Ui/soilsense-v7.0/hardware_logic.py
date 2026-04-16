@@ -76,7 +76,7 @@ class SoilSenseLogic:
             "gantry": "dummy",
             "stirrer": "dummy",
             "scoop": "dummy",
-            "jetson": "dummy", # Keeping Jetson dummy until you have the script running
+            "jetson": "real", # Keeping Jetson dummy until you have the script running
             "doors": "real"
         }
         

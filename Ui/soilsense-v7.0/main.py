@@ -246,7 +246,7 @@ def main(page: ft.Page):
 
     camera_view = ft.Image(
         # This is a tiny 1x1 transparent GIF to keep Flet from crashing on boot
-        src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
+        src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         fit=ft.BoxFit.CONTAIN,
