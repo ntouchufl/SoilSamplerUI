@@ -249,15 +249,15 @@ def main(page: ft.Page):
         fit=ft.BoxFit.CONTAIN,
         border_radius=int(12 * SCALE)
     )
-    
-    soil_results_view = ft.Column([], scroll=ft.ScrollMode.ADAPTIVE, expand=True)
+
+    soil_results_view = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
 
     # --- ACTION HIGHLIGHTER LIST ---
     SCOOPER_STEPS = [
         "Idle", "Moving to Bag", "Stirring", "Analyzing", "Scooping",
         "Moving to Tube", "Dispensing", "Returning to Bag", "Emptying"
     ]
-    
+
     step_indicators = {}
     for step in SCOOPER_STEPS:
         step_indicators[step] = ft.Container(
@@ -312,7 +312,8 @@ def main(page: ft.Page):
             if logic.last_image:
                 camera_view.src = logic.last_image
             
-            soil_results_view.controls = [ft.Text(f"Sample {i+1}: {data.get('classification', 'N/A')}", size=TXT_TINY) for i, data in logic.soil_results.items()]
+            if len(soil_results_view.controls) != len(logic.soil_results):soil_results_view.controls = [ft.Text(f"Sample {i+1}: {data.get('classification', 'N/A')}", size=TXT_TINY) for i, data in logic.soil_results.items()]
+
             
             # Update Step Highlighter
             for step, container in step_indicators.items():

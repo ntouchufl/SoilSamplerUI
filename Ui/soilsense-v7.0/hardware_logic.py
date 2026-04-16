@@ -298,10 +298,20 @@ class SoilSenseLogic:
             time.sleep(0.1)
 
     def write_hardware(self, device, command):
+        # Ensure command ends with a newline
+        if isinstance(command, str):
+            if not command.endswith('\n'):
+                command += '\n'
+            encoded_command = command.encode()
+        elif isinstance(command, bytes):
+            if not command.endswith(b'\n'):
+                encoded_command = command + b'\n'
+            else:
+                encoded_command = command
         if self.ports.get(device):
             if self.statuses[device] == DeviceStatus.OFFLINE: return "F0"
             try:
-                self.ports[device].write(command.encode() if isinstance(command, str) else command)
+                self.ports[device].write(encoded_command)
                 raw_res = self.read_hardware(device)
                 if raw_res and raw_res.startswith("Y"):
                     dur = raw_res[1:]
