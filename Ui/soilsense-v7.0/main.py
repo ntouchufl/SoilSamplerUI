@@ -245,7 +245,8 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Image(
-        src=None, # Removed the URL so Flet doesn't try to load it
+        # This is a tiny 1x1 transparent GIF to keep Flet from crashing on boot
+        src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
         fit=ft.BoxFit.CONTAIN,
