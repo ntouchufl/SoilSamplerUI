@@ -246,12 +246,19 @@ def main(page: ft.Page):
     debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
 
     camera_view = ft.Image(
-        src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
-        width=int(400 * SCALE), 
-        height=int(300 * SCALE), 
-        bgcolor=ft.Colors.BLACK,
+    src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+    width=int(400 * SCALE),
+    height=int(300 * SCALE),
+    fit=ft.ImageFit.CONTAIN,
+)
+
+    camera_view_container = ft.Container(
+        content=camera_view,
+        width=int(400 * SCALE),
+        height=int(300 * SCALE),
+        bgcolor=ft.colors.BLACK,
         border_radius=int(12 * SCALE),
-        alignment=ft.Alignment.CENTER
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,  # enforces the border radius on the image
     )
     start_camera_stream()
     
