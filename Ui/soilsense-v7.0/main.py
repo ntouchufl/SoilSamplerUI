@@ -5,6 +5,7 @@ import base64
 import urllib.request
 import time
 from hardware_logic import SoilSenseLogic, DeviceStatus
+import requests
 
 def main(page: ft.Page):
     page.title = "SoilSense v7.0"
@@ -248,10 +249,11 @@ def main(page: ft.Page):
         src="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", 
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
-        bgcolor=ft.Colors.BLACK,
+        bgcolor=ft.colors.BLACK,
         border_radius=int(12 * SCALE),
-        alignment=ft.Alignment.CENTER
+        alignment=ft.alignment.center
     )
+    start_camera_stream()
     
     # Swapped Column for ListView to fix the rendering bug
     soil_results_view = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
@@ -495,41 +497,31 @@ def main(page: ft.Page):
     page.add(header, ft.Divider(color=BORDER), tabs)
     handle_refresh("refresh")
 
-    import requests # Make sure to: pip install requests
+ # Make sure to: pip install requests
 
-def start_camera_stream():
-    def stream_loop():
-        url = "http://10.42.0.76:5000/video_feed"
-        while True:
-            try:
-                # Use a session for better persistence
-                with requests.get(url, stream=True, timeout=5) as r:
-                    iterator = r.iter_content(chunk_size=1024)
-                    bytes_data = b''
-                    for chunk in iterator:
-                        bytes_data += chunk
-                        a = bytes_data.find(b'\xff\xd8') # JPEG Start
-                        b = bytes_data.find(b'\xff\xd9') # JPEG End
-                        
-                        if a != -1 and b != -1:
-                            jpg = bytes_data[a:b+2]
-                            bytes_data = bytes_data[b+2:]
-                            
-                            # Convert to Base64
-                            base64_img = base64.b64encode(jpg).decode('utf-8')
-                            
-                            # Update UI
-                            camera_view.src_base64 = base64_img
-                            camera_view.update()
-                            
-                            # SLOW DOWN the feed to 10 FPS to prevent UI lockup
-                            time.sleep(0.1) 
-                            
-            except Exception as e:
-                print(f"Stream connection lost: {e}")
-                time.sleep(2) # Wait before retrying
+    def start_camera_stream():
+        def stream_loop():
+            url = "http://10.42.0.76:5000/video_feed"
+            while True:
+                try:
+                    with requests.get(url, stream=True, timeout=5) as r:
+                        bytes_data = b''
+                        for chunk in r.iter_content(chunk_size=1024):
+                            bytes_data += chunk
+                            a = bytes_data.find(b'\xff\xd8')
+                            b_end = bytes_data.find(b'\xff\xd9')
+                            if a != -1 and b_end != -1:
+                                jpg = bytes_data[a:b_end+2]
+                                bytes_data = bytes_data[b_end+2:]
+                                camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
+                                camera_view.src = None  # clear file-path src so base64 takes priority
+                                camera_view.update()
+                                time.sleep(0.1)
+                except Exception as e:
+                    print(f"[STREAM] Connection lost: {e}")
+                    time.sleep(2)
 
-    threading.Thread(target=stream_loop, daemon=True).start()
+        threading.Thread(target=stream_loop, daemon=True).start()
 
 if __name__ == "__main__":
     ft.run(main)
