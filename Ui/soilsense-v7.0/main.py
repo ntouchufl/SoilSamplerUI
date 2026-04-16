@@ -509,10 +509,11 @@ def main(page: ft.Page):
                             jpg = bytes_data[a:b+2]
                             bytes_data = bytes_data[b+2:]
                             try:
+                                # Use the property setter instead of the constructor
                                 camera_view.src_base64 = base64.b64encode(jpg).decode('utf-8')
                                 camera_view.update()
-                            except:
-                                pass
+                            except Exception as e:
+                                print(f"Flet Update Error: {e}")
                 except Exception:
                     time.sleep(2)
 
