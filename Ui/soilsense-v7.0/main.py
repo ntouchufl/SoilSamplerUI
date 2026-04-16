@@ -248,9 +248,9 @@ def main(page: ft.Page):
         content=ft.Text("JETSON LIVE FEED", color=ft.Colors.GREY_700),
         width=int(400 * SCALE), 
         height=int(300 * SCALE), 
-        bgcolor=ft.colors.BLACK,
+        bgcolor=ft.Colors.BLACK,
         border_radius=int(12 * SCALE),
-        alignment=ft.alignment.center
+        alignment=ft.Alignment.CENTER
     )
     
     # Swapped Column for ListView to fix the rendering bug
