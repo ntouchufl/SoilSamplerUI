@@ -303,19 +303,33 @@ class SoilSenseLogic:
             if not command.endswith('\n'):
                 command += '\n'
             encoded_command = command.encode()
+            # Grab a clean string to print
+            print_cmd = command.strip() 
         elif isinstance(command, bytes):
             if not command.endswith(b'\n'):
                 encoded_command = command + b'\n'
             else:
                 encoded_command = command
+            # Grab a clean string to print
+            print_cmd = command.decode(errors='ignore').strip() 
+            
         if self.ports.get(device):
             if self.statuses[device] == DeviceStatus.OFFLINE: return "F0"
             try:
+                # ---> ADDED THIS PRINT <---
+                print(f"[SERIAL TX -> {device.upper()}] {print_cmd}")
+                
                 self.ports[device].write(encoded_command)
                 raw_res = self.read_hardware(device)
+                
                 if raw_res and raw_res.startswith("Y"):
                     dur = raw_res[1:]
-                    self.log(f"{device.upper()} success in {dur}ms")
+                    if dur:
+                        # If there is a time attached (like the gantry)
+                        self.log(f"{device.upper()} success in {dur}ms")
+                    else:
+                        # If there is no time attached (just "Y")
+                        self.log(f"{device.upper()} success")
                     return raw_res
                 elif raw_res and raw_res.startswith("F"):
                     code = raw_res[1:]
@@ -334,7 +348,9 @@ class SoilSenseLogic:
             while time.time() - current_time < 30:
                 try:
                     data = self.ports[device].readline().decode().strip()
-                    if data: return data
+                    if data: 
+                        print(f"[SERIAL RX <- {device.upper()}] {data}")
+                        return data
                 except: return "F9"
                 time.sleep(0.05)
             return "F8" # Timeout
@@ -397,23 +413,36 @@ class SoilSenseLogic:
             # 1. Gantry move stirrer to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Stirrer to Bag ({x},{y})...")
-            self.write_hardware("gantry", f"B{x}{y}")
+            response = self.write_hardware("gantry", f"B{x}{y}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from gantry. Halting.")
+                self.stop_sequence()
+                break # Stop the sequence from moving to the next step
+    
             if not self.isRunning: break
             
             # 2. Stir + take image
             self.scooper_status = "Stirring"
             self.log(f"Sample {i+1}: Stirring...")
-            self.write_hardware("stirrer", "START")
-            
+            response = self.write_hardware("stirrer", "START")
+
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from stirrer. Halting.")
+                self.stop_sequence()
+                break # Stop the sequence from moving to the next step
+
             # Use a responsive sleep loop so it can be interrupted instantly
             for _ in range(20):
                 if not self.isRunning: break
                 time.sleep(0.1)
                 
             if not self.isRunning: break
-            self.write_hardware("stirrer", "STOP")
-            if not self.isRunning: break
-            
+            response = self.write_hardware("stirrer", "STOP")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from stirrer. Halting.")
+                self.stop_sequence()
+                break
+
             self.scooper_status = "Analyzing"
             self.log(f"Sample {i+1}: Analyzing...")
             status, raw_res, img = self.communicate_with_jetson("A")
@@ -433,47 +462,66 @@ class SoilSenseLogic:
             # 3. Gantry move scooper to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Scooper to Bag ({x},{y})...")
-            self.write_hardware("gantry", f"B{x}{y}")
-            if not self.isRunning: break
-            
-            time.sleep(2.0) # Wait for gantry to stabilize before scooping  
+            response = self.write_hardware("gantry", f"B{x}{y}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from gantry. Halting.")
+                self.stop_sequence()
+                break
 
             # 4. scoop() sequence
             self.scooper_status = "Scooping"
             self.log(f"Sample {i+1}: Performing Scoop Sequence...")
-            self.write_hardware("scoop", "S")  # Open scoop
+            response = self.write_hardware("scoop", "S")  # Open scoop
             if not self.isRunning: break
-            
-            #add case for "E" response from scoop which indicates empty bag and should skip to next sample
+
+            if response.startswith("E"):
+                self.log(f"Sample {i+1}: Scoop is empty. Skipping...")
+                self.soil_results[i] = {"classification": "Empty"}
+                if self.on_sequence_update: self.on_sequence_update()
+                continue
+
+            time.sleep(2.0)
 
 
             # 5. Gantry move to tube
             self.scooper_status = "Moving to Tube"
             self.log(f"Sample {i+1}: Moving to Tube ({x},{y})...")
-            self.write_hardware("gantry", f"T{x}{y}")
-            if not self.isRunning: break
+            response = self.write_hardware("gantry", f"T{x}{y}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from gantry. Halting.")
+                self.stop_sequence()
+                break
 
             time.sleep(2.0)
 
             # 6. dispense(soilWeight)
             self.scooper_status = "Dispensing"
             self.log(f"Sample {i+1}: Dispensing {self.soil_weight}g...")
-            self.write_hardware("scoop", f"D{self.soil_weight}")
-            if not self.isRunning: break
+            response = self.write_hardware("scoop", f"D{self.soil_weight}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from scoop. Halting.")
+                self.stop_sequence()
+                break
 
             # 7. gantry move scoop back to bag
             self.scooper_status = "Returning to Bag"
             self.log(f"Sample {i+1}: Returning to Bag to clear scoop...")
-            self.write_hardware("gantry", f"B{x}{y}")
-            if not self.isRunning: break
+            response = self.write_hardware("gantry", f"B{x}{y}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from gantry. Halting.")
+                self.stop_sequence()
+                break
 
             time.sleep(2.0)
 
             # 8. empty()
             self.scooper_status = "Emptying"
             self.log(f"Sample {i+1}: Vacating remaining soil...")
-            self.write_hardware("scoop", "E")
-            if not self.isRunning: break
+            response = self.write_hardware("scoop", "E")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from scoop. Halting.")
+                self.stop_sequence()
+                break
 
         self.scooper_status = "Idle"
         if self.isRunning:

@@ -1,106 +1,76 @@
-# SoilSense v6.0: Automated Soil Analysis System
+SOILSENSE AUTOMATED SOIL ANALYZER
 
-SoilSense v6.0 is an integrated hardware and software platform designed for automated soil sampling and analysis. The system utilizes a multi-axis gantry to navigate a grid of soil samples, performing stirring and scooping operations before capturing images for automated soil type classification.
+SoilSense is a PyQt6-based automated hardware interface for soil sample processing and classification. It controls a multi-axis gantry, stirrer, and scooping mechanism via serial communication while interfacing with a Jetson device for visual AI classification.
 
-## 🚀 Overview
+FEATURES
 
-The system is powered by a Flet-based user interface designed for deployment on Raspberry Pi or macOS. It features high-level state management, safety interlocks, and flexible hardware integration through serial communication or dummy simulation modes.
+PyQt6 Dashboard: Modern, dark-themed UI with real-time hardware status indicators, progress tracking, and log output.
 
-### Key Features
-- **Precision Gantry Control:** X-Y movement to navigate a grid of soil sample containers.
-- **Automated Sampling:** Integrated stirrer and scoop actuator for soil preparation and sampling.
-- **Safety Interlock System:** Monitors door states (physical via GPIO or simulated) to halt operations if safety is compromised.
-- **Dual Operating Modes:** Supports both "Real" (hardware-connected) and "Dummy" (simulation) modes for all subsystems.
-- **Live Feed Integration:** Connects to an NVIDIA Jetson or simulated source for soil classification and image display.
+Automated Sequencing: Runs fully automated routines from moving the gantry to the bag, stirring, triggering the Jetson analysis, scooping the target weight, and dispensing to tubes.
 
----
+Live Camera Feed: Integrates an MJPEG video stream from the Jetson (or a local webcam mock) directly into the UI.
 
-## 🛠 Hardware Architecture
+Manual Override & Debug: Dedicated tab to toggle hardware between "Real" and "Dummy" modes, test individual serial commands, and manually jog equipment.
 
-The system is powered by three primary Arduino-based controllers and an NVIDIA Jetson:
-1. **Gantry Controller:** Manages X-Y stepper motors for precise positioning.
-2. **Stirrer Controller:** Operates the soil stirring mechanism.
-3. **Scoop Controller:** Controls the sampling actuator. Supports variable weight presets (Small/Medium/Large).
-4. **Jetson Interface:** Handles image processing and soil type classification.
-5. **Safety Sensors:** GPIO-connected limit switches for door monitoring.
+Safety Interlocks: Background thread monitors hardware doors (via GPIO or Dummy mode). Halts all sequences automatically if a door is open for more than 1 second.
 
----
+Data Export: Automatically saves classification results and sample timestamps to a CSV file.
 
-## 🚦 Getting Started
+SYSTEM ARCHITECTURE
+The software communicates with several distinct hardware modules:
 
-### Prerequisites
-- Python 3.10+
-- `flet`, `pyserial`, and `gpiozero` (for Linux/Pi deployment)
+Gantry (Serial): Controls X/Y movement.
 
-### Running the Desktop UI
-1. Navigate to the `Ui/soilsense-v6.0` directory.
-2. Install dependencies:
-   ```bash
-   pip install -r ../../requirements.txt
-   ```
-3. Update serial numbers in `hardware_logic.py` if necessary.
-4. Run the application:
-   ```bash
-   python main.py
-   ```
+Stirrer (Serial): Agitates the soil sample.
 
----
+Scoop (Serial): Collects and dispenses specific weights of soil using a load cell.
 
-## 📁 File Structure
+Jetson (TCP Socket): Receives the "A" (Analyze) command and returns JSON data containing the soil classification and average value.
 
-- **`Ui/soilsense-v6.0/`**:
-  - **`main.py`**: The Flet UI entry point.
-  - **`hardware_logic.py`**: The core logic engine, managing hardware communication and the analysis sequence.
-  - **`limit_switch.py`**: A standalone test script for GPIO-connected sensors.
-  - **`images/`**: Directory for locally stored soil images.
-- **`requirements.txt`**: Top-level dependencies.
+Doors (GPIO): Hardware safety switches (defaults to Dummy mode on macOS).
 
-## 📊 Data Output Format (Jetson)
+PREREQUISITES
+Ensure you have Python 3 installed. Install the required dependencies:
+pip install PyQt6 pyserial opencv-python flask gpiozero
+(Note: gpiozero is only required if running on a Raspberry Pi with real hardware doors).
 
-The system communicates with an NVIDIA Jetson for soil analysis. The Jetson returns a JSON object with the following structure:
+RUNNING THE APPLICATION
 
-```json
-{
-  "timestamp": "20260406_161322",
-  "classification": "Organic",
-  "dark_pct": 36.96,
-  "medium_pct": 37.99,
-  "light_pct": 25.05,
-  "avg_value": 120.68,
-  "avg_r": 147.82,
-  "avg_g": 163.25,
-  "avg_b": 162.99,
-  "dark_thresh": 85,
-  "light_thresh": 170,
-  "total_pixels": 375000,
-  "calibration_applied": true,
-  "color_calibration_applied": true,
-  "files": {
-    "color": "path/to/color.jpg",
-    "gray": "path/to/gray.jpg",
-    "heatmap": "path/to/heatmap.jpg"
-  }
-}
-```
+Start the Camera Stream (Optional/Testing)
+If you are testing without the physical Jetson, you can use your computer's webcam to mock the Jetson MJPEG stream. Run this command:
+python mac_video_url.py
+This will host a video feed on http://0.0.0.0:5005/video_feed.
 
-The UI extracts the `classification` and `avg_value` for real-time display.
+Launch the Main GUI
+Run this command:
+python main.py
+The application will automatically scan the USB bus for the Gantry, Stirrer, and Scoop Arduinos based on their hardcoded serial numbers. If they are disconnected, you can safely run the sequence using the built-in "Dummy Mode".
 
-## 💾 Data Export (SD Card)
-The system includes an **EXPORT DATA** button that:
-1.  **Auto-detects USB SD Cards:** Searches `/media/pi` on Linux (Raspberry Pi) or `/Volumes` on macOS.
-2.  **Generates Timestamped Reports:** Saves a CSV (e.g., `soil_analysis_20260406_161322.csv`) with full details.
-3.  **Comprehensive Trial Data:** Includes grid coordinates, full Jetson classification, color percentages (Dark/Medium/Light), RGB averages, and pixel counts for every sample in the trial.
+HARDWARE COMMUNICATION PROTOCOL
+The system utilizes asynchronous serial commands. The sequencer waits for a "Y" (Yes/Success) confirmation from the hardware before advancing to the next step. All serial TX/RX traffic is logged to the console for debugging.
 
-If no SD card is detected, the file is saved to the application's local directory as a fallback.
+Gantry Commands:
 
-## 🥄 Scoop Size Control
-The system supports three weight presets for the scoop mechanism. When the sequence runs, the UI sends the selected weight to the scoop controller:
-- **Small:** 10g (Command: `DOWN Small\n`)
-- **Medium:** 20g (Command: `DOWN Medium\n`)
-- **Large:** 30g (Command: `DOWN Large\n`)
+BXY: Move to Bag X,Y
 
-## 📊 Testing & Simulation
-To test the interface without hardware, enable "Dummy Mode" in the **Manual Debug** tab of the application. This will simulate all hardware responses, including gantry movement, stirring, and soil analysis.
+TXY: Move to Tube X,Y
 
-## ⚖️ License
-This project is for educational/research purposes.
+Z: Zero Gantry
+
+S: Stop
+
+Scoop Commands:
+
+S: Scoop
+
+D<weight>: Dispense specific weight (e.g., D10)
+
+E: Empty
+
+Q: Quit
+
+Standard Responses:
+
+Yxxxx: Success (with elapsed time in milliseconds)
+
+F<code: Failure (e.g., F0 for Unknown Command, F2 for Limit Hit)

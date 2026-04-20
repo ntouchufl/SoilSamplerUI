@@ -27,7 +27,7 @@ Servo servoDispense;
 const int stepPin = 3; //step is plugged into pin 3
 const int dirPin = 2; //dir is plugged into pin 2
 const int MAX_STEPS = 1400; // 100mm of travel w/pitch 1mm and 200 steps/rev, 1400 ish
-const int MOTOR_DIR = 1;  // Sign convention is - speed is down in code. This flips it
+const int MOTOR_DIR = -1;  // Sign convention is - speed is down in code. This flips it
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin); //create stepper object
 
 //pin setup for stepper steps
