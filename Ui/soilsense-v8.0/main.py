@@ -431,8 +431,17 @@ class SoilSenseWindow(QMainWindow):
         mid.setSpacing(int(10*S))
         mid.addWidget(self._section_label("SCOOPER STATUS"))
         SCOOPER_STEPS = [
-            "Idle","Moving to Bag","Stirring","Analyzing","Scooping",
-            "Moving to Tube","Dispensing","Returning to Bag","Emptying"
+            "Idle",
+            "Moving to Bag",
+            "Stirring",
+            "Positioning Camera",
+            "Taking Image",
+            "Analyzing",
+            "Scooping",
+            "Moving to Tube",
+            "Dispensing",
+            "Returning to Bag",
+            "Emptying"
         ]
         self.step_indicators = {}
         scroll, step_layout = self._scroll_card()
