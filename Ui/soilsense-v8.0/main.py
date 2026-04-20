@@ -1,512 +1,830 @@
-import flet as ft
-import flet_video as ftv
-import flet_webview as ftw
-import threading
+"""
+SoilSense v7.0 — PyQt6 Rewrite
+Replaces Flet with PyQt6. Camera feed reads MJPEG stream from a URL.
+"""
+
+import sys
 import platform
-import base64
+import threading
 import urllib.request
-import time
+
+from PyQt6.QtCore import (Qt, QTimer, QThread, pyqtSignal, QObject, QSize)
+from PyQt6.QtGui import (QFont, QColor, QPalette, QPixmap, QImage)
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QScrollArea, QDialog, QLineEdit,
+    QGridLayout, QFrame, QSizePolicy, QTabWidget, QCheckBox
+)
+
 from hardware_logic import SoilSenseLogic, DeviceStatus
-import requests
 
-def main(page: ft.Page):
-    page.title = "SoilSense v7.0"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = "#151619"
 
-    # Screen Scaling
-    PI_WIDTH, PI_HEIGHT = 1920, 1200
-    if platform.system() == "Darwin":
-        SCALE = 0.5
-        page.window.width, page.window.height = int(PI_WIDTH * SCALE), int(PI_HEIGHT * SCALE)
-        page.window.full_screen = False
-        page.window.resizable = False  # Keep this locked for Mac testing
-    else:
-        SCALE = 1.0
-        page.window.full_screen = True
-        # Notice resizable is removed here so the Pi can expand!
+# ─────────────────────────── THEME ────────────────────────────
+ACCENT      = "#00ff41"
+BG_MAIN     = "#151619"
+BG_CARD     = "#1c1e22"
+BORDER      = "#2c2e33"
+TEXT_MUTED  = "#8e9299"
+RED         = "#ff4444"
+BLUE        = "#3b82f6"
+AMBER       = "#f59e0b"
+WHITE       = "#ffffff"
+BLACK       = "#000000"
 
-    logic = SoilSenseLogic()
+
+# soilsense-v8.0/main.py
+
+def _qss_btn(bg, fg="#ffffff", radius=12):
+    # Determine a specific hover color. 
+    # If the background is the ACCENT green (#00ff41), we'll use a darker forest green.
+    hover_color = "#00cc33" if bg == ACCENT else f"{bg}cc"
     
-    # UI State Tracker for Hardware Safety Interlocks
-    ui_state = {"gantry_zeroed": False}
+    return f"""
+        QPushButton {{
+            background-color: {bg};
+            color: {fg};
+            border-radius: {radius}px;
+            font-weight: bold;
+            padding: 0 18px;
+        }}
+        QPushButton:hover {{ 
+            background-color: {hover_color}; 
+        }}
+        QPushButton:disabled {{ background-color: #333; color: #666; }}
+    """
 
-    # Video feed URL
-    video_url = "http://10.42.0.76:5000/video_feed"
-    video_url = "http://127.0.0.1:5005/video_feed"
+
+def _card_frame(parent=None):
+    f = QFrame(parent)
+    f.setStyleSheet(f"""
+        QFrame {{
+            background-color: {BG_CARD};
+            border: 2px solid {BORDER};
+            border-radius: 12px;
+        }}
+    """)
+    return f
 
 
-    # Styling
-    ACCENT = "#00ff41"
-    BG_CARD = "#1c1e22"
-    BORDER = "#2c2e33"
-    TEXT_MUTED = "#8e9299"
-    TXT_TINY, TXT_MED, TXT_LARGE = int(18*SCALE), int(24*SCALE), int(36*SCALE)
-    ICON_LG = int(48*SCALE)
-    BTN_HEIGHT = int(80*SCALE)
+# ─────────────────────── MJPEG STREAM THREAD ───────────────────
+class MjpegThread(QThread):
+    """Reads an MJPEG stream from a URL and emits QPixmap frames."""
+    frame_ready = pyqtSignal(QPixmap)
+    error       = pyqtSignal(str)
 
-    # --- BUTTON CLICK HANDLERS ---
-    def handle_start_click(e):
-        threading.Thread(target=logic.run_sequence, daemon=True).start()
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+        self._running = True
 
-    def handle_stop_click(e):
-        logic.stop_sequence()
-        # Revoke the zeroed status on stop/e-stop
-        ui_state["gantry_zeroed"] = False 
-        page.pubsub.send_all("refresh")
+    def run(self):
+        try:
+            req = urllib.request.urlopen(self.url, timeout=5)
+        except Exception as e:
+            self.error.emit(str(e))
+            return
 
-    def handle_export_click(e):
-        logic.export_results_csv()
+        buf = b""
+        while self._running:
+            try:
+                buf += req.read(4096)
+            except Exception as e:
+                self.error.emit(str(e))
+                break
 
-    def handle_zero_gantry_click(e):
-        logic.zero_gantry()
-        # Grant the zeroed status and unlock system
-        ui_state["gantry_zeroed"] = True
-        page.pubsub.send_all("refresh")
+            # Find JPEG boundaries
+            start = buf.find(b"\xff\xd8")
+            end   = buf.find(b"\xff\xd9")
+            if start != -1 and end != -1 and end > start:
+                jpg = buf[start:end + 2]
+                buf = buf[end + 2:]
+                img = QImage.fromData(jpg)
+                if not img.isNull():
+                    self.frame_ready.emit(QPixmap.fromImage(img))
 
-    async def handle_exit_click(e):
-        print("[DEBUG] Shutting down Flet frontend...")
-        await page.window.close()
+    def stop(self):
+        self._running = False
+        self.quit()
 
-    # --- HELPER WIDGETS ---
-    def create_stepper(label, current_val, on_change, step=1, min_val=1, is_float=False, vertical=False):
-        val_text = ft.Text(str(current_val), size=TXT_MED, weight="bold")
-        
-        def handle_click(delta):
-            def _click(e):
-                current = float(val_text.value) if is_float else int(val_text.value)
-                new_val = max(min_val, current + delta)
-                if is_float: 
-                    new_val = round(new_val, 1)
-                else:
-                    new_val = int(new_val)
-                    
-                val_text.value = str(new_val)
-                val_text.update()
-                on_change(new_val)
-            return _click
 
-        stepper_controls = ft.Row([
-            ft.IconButton(ft.Icons.REMOVE, on_click=handle_click(-step), icon_size=int(24 * SCALE), icon_color="white", bgcolor=BORDER),
-            ft.Container(val_text, width=int(60 * SCALE), alignment=ft.Alignment.CENTER),
-            ft.IconButton(ft.Icons.ADD, on_click=handle_click(step), icon_size=int(24 * SCALE), icon_color="white", bgcolor=BORDER),
-        ], spacing=int(5 * SCALE))
+# ──────────────────────── CAMERA WIDGET ────────────────────────
+class CameraWidget(QLabel):
+    """
+    Shows a live MJPEG stream in real mode.
+    In dummy mode the stream is killed and a static placeholder is shown.
+    Call set_dummy_mode(True/False) to switch at runtime.
+    """
+    def __init__(self, url: str, dummy: bool = False, parent=None):
+        super().__init__(parent)
+        self._url    = url
+        self._thread = None
 
-        if vertical:
-            return ft.Column([ft.Text(label, size=TXT_TINY, color=TEXT_MUTED), stepper_controls], spacing=int(5 * SCALE), expand=1)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet(f"background:{BLACK}; border:2px solid {BORDER}; border-radius:12px;")
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumHeight(200)
+
+        # Initialise in whatever mode is requested
+        self.set_dummy_mode(dummy)
+
+    # ── public API ──────────────────────────────────────────────
+    def set_dummy_mode(self, is_dummy: bool):
+        if is_dummy:
+            self._stop_stream()
+            self._show_dummy_placeholder()
         else:
-            return ft.Row([ft.Text(label, size=TXT_MED, color=TEXT_MUTED), stepper_controls], spacing=int(10 * SCALE))
+            self._show_connecting()
+            self._start_stream()
 
-    # --- SAMPLES KEYPAD DIALOG ---
-    sample_input = ft.Text("0", size=TXT_LARGE, weight="bold")
-    
-    def handle_keypad_click(val):
-        def _click(e):
-            if val == "C": 
-                sample_input.value = "0"
-            elif val == "OK":
-                final_val = int(sample_input.value)
-                if final_val > 40:
-                    final_val = 40
-                logic.update_samples(final_val)
-                keypad_dialog.open = False
-            else:
-                if sample_input.value == "0": 
-                    sample_input.value = str(val)
-                else:
-                    new_val_str = sample_input.value + str(val)
-                    if int(new_val_str) > 40:
-                        sample_input.value = "40"
-                    else:
-                        sample_input.value = new_val_str
-            page.update()
-        return _click
+    def stop(self):
+        self._stop_stream()
 
-    def create_kp_btn(text_val, text_color="white", bgcolor=BORDER):
-        return ft.Container(
-            content=ft.Text(text_val, size=TXT_MED, weight="bold", color=text_color, text_align=ft.TextAlign.CENTER), 
-            alignment=ft.Alignment.CENTER,
-            on_click=handle_keypad_click(text_val), 
-            width=int(100*SCALE), height=int(90*SCALE), 
-            bgcolor=bgcolor, 
-            border_radius=int(8*SCALE),
-            ink=True
+    # ── stream lifecycle ────────────────────────────────────────
+    def _start_stream(self):
+        self._stop_stream()                        # kill any previous thread
+        self._thread = MjpegThread(self._url)
+        self._thread.frame_ready.connect(self._on_frame)
+        self._thread.error.connect(self._on_error)
+        self._thread.start()
+
+    def _stop_stream(self):
+        if self._thread and self._thread.isRunning():
+            self._thread.stop()
+            self._thread.wait(2000)
+        self._thread = None
+
+    # ── display helpers ─────────────────────────────────────────
+    def _show_connecting(self):
+        self.clear()
+        self.setText("Connecting to stream...")
+        self.setStyleSheet(
+            f"background:{BLACK}; border:2px solid {BORDER}; border-radius:12px;"
+            f" color:#8e9299; font-size:14px;"
         )
 
-    kp_spacing = int(15*SCALE)
-    keypad_rows = [
-        ft.Row([create_kp_btn("1"), create_kp_btn("2"), create_kp_btn("3")], alignment=ft.MainAxisAlignment.CENTER, spacing=kp_spacing),
-        ft.Row([create_kp_btn("4"), create_kp_btn("5"), create_kp_btn("6")], alignment=ft.MainAxisAlignment.CENTER, spacing=kp_spacing),
-        ft.Row([create_kp_btn("7"), create_kp_btn("8"), create_kp_btn("9")], alignment=ft.MainAxisAlignment.CENTER, spacing=kp_spacing),
-        ft.Row([create_kp_btn("C", "white", "#ff4444"), create_kp_btn("0"), create_kp_btn("OK", "black", ACCENT)], alignment=ft.MainAxisAlignment.CENTER, spacing=kp_spacing),
-    ]
-
-    keypad_dialog = ft.AlertDialog(
-        title=ft.Text("Enter Samples (Max 40)", size=TXT_MED, weight="bold"),
-        content=ft.Container(
-            width=int(450*SCALE), 
-            content=ft.Column([
-                ft.Container(sample_input, alignment=ft.Alignment.CENTER, padding=int(20*SCALE), bgcolor="black", border_radius=int(10*SCALE)),
-                ft.Divider(height=int(15*SCALE), color="transparent"),
-                *keypad_rows
-            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-        )
-    )
-    page.overlay.append(keypad_dialog)
-
-    def open_samples_keypad(e):
-        sample_input.value = str(logic.total_samples)
-        keypad_dialog.open = True
-        page.update()
-
-    # --- WEIGHT MENU DIALOG ---
-    custom_weight_input = ft.TextField(
-        label="Custom (g)", 
-        width=int(220*SCALE), 
-        height=int(80*SCALE),
-        text_size=TXT_MED,
-        label_style=ft.TextStyle(size=TXT_TINY),
-        text_align=ft.TextAlign.CENTER, 
-        keyboard_type=ft.KeyboardType.NUMBER
-    )
-
-    def set_weight(w):
-        logic.soil_weight = int(w)
-        logic.log(f"Soil weight target set to {logic.soil_weight}g")
-        weight_dialog.open = False
-        page.pubsub.send_all("refresh")
-
-    def handle_custom_weight(e):
-        if custom_weight_input.value.isdigit():
-            set_weight(custom_weight_input.value)
-
-    def create_weight_btn(text_val, weight_val):
-        return ft.Container(
-            content=ft.Text(text_val, size=TXT_MED, weight="bold", color="white", text_align=ft.TextAlign.CENTER),
-            alignment=ft.Alignment.CENTER,
-            height=BTN_HEIGHT,
-            bgcolor=BORDER,
-            border_radius=int(8*SCALE),
-            on_click=lambda e: set_weight(weight_val),
-            ink=True
-        )
-    
-    
-    weight_dialog = ft.AlertDialog(
-        title=ft.Text("Select Target Weight", size=TXT_LARGE, weight="bold"),
-        content=ft.Container(
-            width=int(500*SCALE),
-            content=ft.Column([
-                create_weight_btn("10g (Small)", 10),
-                create_weight_btn("20g (Medium)", 20),
-                create_weight_btn("30g (Large)", 30),
-                ft.Divider(color=BORDER, height=int(20*SCALE)),
-                ft.Row([
-                    custom_weight_input,
-                    ft.Container(
-                        content=ft.Text("APPLY", size=TXT_MED, weight="bold", color="black", text_align=ft.TextAlign.CENTER),
-                        alignment=ft.Alignment.CENTER,
-                        height=int(80*SCALE),
-                        bgcolor=ACCENT,
-                        border_radius=int(8*SCALE),
-                        on_click=handle_custom_weight,
-                        ink=True,
-                        expand=True
-                    )
-                ], alignment=ft.MainAxisAlignment.CENTER, spacing=int(15*SCALE))
-            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH) 
-        )
-    )
-    page.overlay.append(weight_dialog)
-
-    def open_weight_menu(e):
-        custom_weight_input.value = ""
-        weight_dialog.open = True
-        page.update()
-
-    # --- UI COMPONENTS ---
-    btn_style = ft.ButtonStyle(
-        shape=ft.RoundedRectangleBorder(radius=int(12 * SCALE)), 
-        text_style=ft.TextStyle(size=TXT_MED, weight="bold")
-    )
-    
-    btn_start = ft.Button("START", icon=ft.Icons.PLAY_ARROW, bgcolor=ACCENT, color="black", height=BTN_HEIGHT, on_click=handle_start_click, style=btn_style)
-    btn_stop = ft.Button("STOP", icon=ft.Icons.STOP, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_stop_click, visible=False, style=btn_style)
-    btn_export = ft.Button("EXPORT", icon=ft.Icons.SAVE_ALT, bgcolor="#3b82f6", color="white", height=BTN_HEIGHT, on_click=handle_export_click, style=btn_style)
-    btn_samples = ft.Button("SAMPLES", icon=ft.Icons.KEYBOARD, bgcolor=BORDER, color="white", height=BTN_HEIGHT, on_click=open_samples_keypad, style=btn_style)
-    btn_weight = ft.Button("WEIGHT", icon=ft.Icons.SCALE, bgcolor=BORDER, color="white", height=BTN_HEIGHT, on_click=open_weight_menu, style=btn_style)
-    btn_zero_gantry = ft.Button("ZERO FIRST", icon=ft.Icons.HOME, bgcolor="#f59e0b", color="black", height=BTN_HEIGHT, on_click=handle_zero_gantry_click, style=btn_style)
-
-    log_column = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
-    total_samples_text = ft.Text(f"Target: {logic.total_samples} samples | {logic.soil_weight}g", size=TXT_MED, color=TEXT_MUTED)
-
-    # Status indicators
-    door_indicators = {
-        "left": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "right": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value)
-    }
-    status_indicators = {
-        "gantry": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "stirrer": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "scoop": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value),
-        "jetson": ft.Container(width=int(24*SCALE), height=int(24*SCALE), border_radius=int(12*SCALE), bgcolor=DeviceStatus.OFFLINE.value)
-    }
-    debug_view = ft.ListView(expand=True, spacing=int(15 * SCALE), padding=int(20 * SCALE))
-
-    
-    camera_view = ftw.WebView(
-        # Point it directly to your network stream
-        url=video_url, 
-        expand=True,
-        # Optional: You can inject CSS to make the video fill the frame perfectly and hide scrollbars
-        bgcolor="#151619" # Match your app background
-    )
-    
-    # Swapped Column for ListView to fix the rendering bug
-    soil_results_view = ft.ListView(expand=True, auto_scroll=True, spacing=int(5*SCALE))
-
-    # --- ACTION HIGHLIGHTER LIST ---
-    SCOOPER_STEPS = [
-        "Idle", "Moving to Bag", "Stirring", "Analyzing", "Scooping",
-        "Moving to Tube", "Dispensing", "Returning to Bag", "Emptying"
-    ]
-
-    step_indicators = {}
-    for step in SCOOPER_STEPS:
-        step_indicators[step] = ft.Container(
-            content=ft.Text(step, size=TXT_TINY, weight="bold", color=TEXT_MUTED),
-            padding=int(8*SCALE),
-            border_radius=int(6*SCALE),
-            bgcolor="transparent"
-        )
-        
-    scooper_status_view = ft.Column(
-        controls=list(step_indicators.values()),
-        spacing=int(2*SCALE),
-        scroll=ft.ScrollMode.ADAPTIVE
-    )
-
-    def handle_refresh(msg):
-        if msg == "refresh":
-            if len(log_column.controls) != len(logic.logs):
-                log_column.controls = [ft.Text(l, size=TXT_TINY, color=TEXT_MUTED, font_family="monospace", selectable=True) for l in logic.logs]
-                
-            total_samples_text.value = f"Target: {logic.total_samples} samples | {logic.soil_weight}g"
-            
-            # Update indicators
-            for device, indicator in status_indicators.items():
-                indicator.bgcolor = logic.statuses[device].value
-            
-            door_indicators["left"].bgcolor = logic.door_statuses["left"].value
-            door_indicators["right"].bgcolor = logic.door_statuses["right"].value
-
-            # Safety Interlock & Visual Feedback Logic
-            if logic.isRunning:
-                btn_start.text = "RUNNING"
-                btn_start.disabled = True
-            elif not ui_state["gantry_zeroed"]:
-                btn_start.text = "ZERO FIRST"
-                btn_start.disabled = True
-                btn_zero_gantry.bgcolor = "#f59e0b" # Bright amber warning
-                btn_zero_gantry.color = "black"
-            else:
-                btn_start.text = "START"
-                btn_start.disabled = False
-                btn_zero_gantry.bgcolor = BORDER # Return to normal dark gray
-                btn_zero_gantry.color = "white"
-
-            btn_stop.visible = logic.isRunning
-            btn_samples.disabled = logic.isRunning
-            btn_weight.disabled = logic.isRunning
-            debug_view.disabled = logic.isRunning
-
-            door_toggle_row.visible = logic.device_modes["doors"] == "dummy"
-
-            # if logic.last_image:
-            #     camera_view.src = logic.last_image
-            
-            if len(soil_results_view.controls) != len(logic.soil_results):soil_results_view.controls = [ft.Text(f"Sample {i+1}: {data.get('classification', 'N/A')}", size=TXT_TINY) for i, data in logic.soil_results.items()]
-
-            
-            # Update Step Highlighter
-            for step, container in step_indicators.items():
-                if logic.scooper_status == step:
-                    container.bgcolor = ACCENT
-                    container.content.color = "black"
-                else:
-                    container.bgcolor = "transparent"
-                    container.content.color = TEXT_MUTED
-
-            page.update()
-
-    page.pubsub.subscribe(handle_refresh)
-    logic.on_log_update = lambda: page.pubsub.send_all("refresh")
-    logic.on_status_update = lambda: page.pubsub.send_all("refresh")
-    logic.on_sequence_update = lambda: page.pubsub.send_all("refresh")
-
-    dashboard = ft.Column([
-        # TOP AREA: 3-Column Data Display
-        ft.Row([
-            # Left Column: Jetson Feed & Soil Results
-            ft.Column([
-                ft.Text("JETSON FEED", size=TXT_MED, weight="bold", color=TEXT_MUTED),
-                camera_view,
-                ft.Divider(height=int(20*SCALE), color="transparent"),
-                ft.Text("SOIL RESULTS", size=TXT_MED, weight="bold", color=TEXT_MUTED),
-                ft.Container(
-                    content=soil_results_view, 
-                    expand=True,
-                    bgcolor=BG_CARD,
-                    padding=int(15*SCALE),
-                    border_radius=int(12*SCALE),
-                    border=ft.border.all(2, BORDER)
-                ),
-            ], expand=1, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-            
-            # Middle Column: Scooper Status
-            ft.Column([
-                ft.Text("SCOOPER STATUS", size=TXT_MED, weight="bold", color=TEXT_MUTED),
-                ft.Container(
-                    content=scooper_status_view, 
-                    expand=True, 
-                    bgcolor=BG_CARD, 
-                    padding=int(15*SCALE), 
-                    border_radius=int(12*SCALE),
-                    border=ft.border.all(2, BORDER)
-                ),
-            ], expand=1, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-
-            # Right Column: System Logs 
-            ft.Column([
-                ft.Text("SYSTEM LOGS", size=TXT_MED, weight="bold", color=TEXT_MUTED),
-                ft.Container(
-                    content=log_column, 
-                    expand=True, 
-                    bgcolor="black", 
-                    padding=int(20*SCALE), 
-                    border_radius=int(12*SCALE),
-                    border=ft.border.all(2, BORDER)
-                ),
-            ], expand=1, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
-        ], expand=True),
-
-        # BOTTOM AREA: Full-Width Control Bar
-        ft.Divider(height=int(20*SCALE), color=BORDER),
-        ft.Row([
-            total_samples_text,
-            ft.Row([
-                btn_zero_gantry, 
-                btn_samples, 
-                btn_weight, 
-                btn_export, 
-                btn_stop, 
-                btn_start
-            ], spacing=int(10*SCALE), run_spacing=int(10*SCALE), wrap=True) 
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-    ], expand=True)
-
-    # --- DEBUG VIEW ---
-    door_toggle_row = ft.Row(visible=False, spacing=int(20 * SCALE))
-
-    def create_device_control(name):
-        is_mac_and_doors = platform.system() == "Darwin" and name == "doors"
-
-        dummy_switch = ft.Switch(
-            label="Dummy Mode",
-            value=logic.device_modes[name] == "dummy",
-            scale=1.5 * SCALE,
-            on_change=lambda e: logic.set_device_mode(name, "dummy" if e.control.value else "real"),
-            active_color=ACCENT,
-            disabled=is_mac_and_doors
+    def _show_dummy_placeholder(self):
+        self.clear()
+        self.setText("[ DUMMY MODE ]\nJetson stream disabled")
+        self.setStyleSheet(
+            f"background:#1a1a1a; border:2px dashed {BORDER}; border-radius:12px;"
+            f" color:{TEXT_MUTED}; font-size:14px; font-weight:bold;"
         )
 
-        content_rows = [
-            ft.Row([
-                ft.Text(name.upper(), size=TXT_TINY, weight="bold"),
-                dummy_switch,
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        ]
-
-        if name == "doors":
-            door_toggle_row.controls.clear() 
-            door_toggle_row.controls.extend([
-                ft.Button("Toggle Left", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("left"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                ft.Button("Toggle Right", height=int(60 * SCALE), on_click=lambda _: logic.toggle_dummy_door("right"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-            ])
-            content_rows.append(door_toggle_row)
-        else:
-            content_rows.append(
-                ft.Row([
-                    ft.Button("Trigger 1", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD1"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                    ft.Button("Trigger 2", height=int(60 * SCALE), on_click=lambda _: logic.write_hardware(name, b"CMD2"), style=ft.ButtonStyle(text_style=ft.TextStyle(size=TXT_TINY))),
-                ], spacing=int(10 * SCALE))
+    def _on_frame(self, pixmap: QPixmap):
+        # Clear placeholder text on first real frame
+        if self.text():
+            self.clear()
+            self.setStyleSheet(
+                f"background:{BLACK}; border:2px solid {BORDER}; border-radius:12px;"
             )
-
-        return ft.Container(
-            content=ft.Column(content_rows, spacing=int(10 * SCALE)),
-            padding=int(15 * SCALE), bgcolor=BG_CARD, border_radius=int(12 * SCALE), border=ft.Border.all(2, BORDER),
-            expand=True
+        scaled = pixmap.scaled(
+            self.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
         )
-        
-    debug_view.controls=[
-            ft.Text("HARDWARE MANUAL OVERRIDE", size=TXT_MED, weight="bold"),
-            
-            ft.Row([
-                create_device_control("gantry"), 
-                create_device_control("stirrer"),
-                create_device_control("scoop")
-            ], spacing=int(15 * SCALE)),            
-            ft.Row([
-                create_device_control("jetson"),
-                create_device_control("doors")
-            ], spacing=int(15 * SCALE)),
-            
-            ft.Divider(color=BORDER),
-            ft.Text("DUMMY RESPONSE SETTINGS", size=TXT_MED, weight="bold"),
-            
-            ft.Row([
-                create_stepper("Move Time (s):", logic.dummy_responses["move_time"], lambda v: logic.dummy_responses.update({"move_time": v}), step=0.5, min_val=0.0, is_float=True, vertical=True),
-                create_stepper("Analyze Time (s):", logic.dummy_responses["analyze_time"], lambda v: logic.dummy_responses.update({"analyze_time": v}), step=0.5, min_val=0.0, is_float=True, vertical=True),
-            ], spacing=int(15 * SCALE)),
-            
-            ft.Text("Mock Soil Types (comma separated):", size=TXT_TINY, color=TEXT_MUTED),
-            ft.TextField(value=", ".join(logic.dummy_responses["soil_types"]), height=int(60 * SCALE), text_size=TXT_MED, on_change=lambda e: logic.dummy_responses.update({"soil_types": [s.strip() for s in e.control.value.split(",")]})),
-            ft.Button("EXIT TO DESKTOP", icon=ft.Icons.POWER_SETTINGS_NEW, bgcolor="#ff4444", color="white", height=BTN_HEIGHT, on_click=handle_exit_click, style=btn_style)
+        self.setPixmap(scaled)
+
+    def _on_error(self, msg: str):
+        self.clear()
+        self.setText(f"Stream error:\n{msg}")
+        self.setStyleSheet(
+            f"background:{BLACK}; border:2px solid {RED}; border-radius:12px;"
+            f" color:{RED}; font-size:13px;"
+        )
+
+
+# ────────────────────────── DIALOGS ────────────────────────────
+class KeypadDialog(QDialog):
+    def __init__(self, logic, current_val, scale, parent=None):
+        super().__init__(parent)
+        self.logic  = logic
+        self.setModal(True)
+        self.setWindowTitle("Enter Samples (Max 40)")
+        self.setStyleSheet(f"background:{BG_CARD}; color:{WHITE};")
+
+        root = QVBoxLayout(self)
+        root.setSpacing(12)
+
+        self.display = QLabel(str(current_val))
+        self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.display.setStyleSheet(f"background:black; border-radius:8px; font-size:{int(36*scale)}px; font-weight:bold; padding:14px;")
+        root.addWidget(self.display)
+
+        keys = [["1","2","3"],["4","5","6"],["7","8","9"],["C","0","OK"]]
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        for r, row in enumerate(keys):
+            for c, k in enumerate(row):
+                btn = QPushButton(k)
+                h = int(90*scale)
+                btn.setFixedHeight(h)
+                if k == "C":
+                    btn.setStyleSheet(_qss_btn(RED))
+                elif k == "OK":
+                    btn.setStyleSheet(_qss_btn(ACCENT, BLACK))
+                else:
+                    btn.setStyleSheet(_qss_btn(BORDER))
+                btn.setFont(QFont("", int(20*scale), QFont.Weight.Bold))
+                btn.clicked.connect(lambda _, v=k: self._press(v))
+                grid.addWidget(btn, r, c)
+        root.addLayout(grid)
+
+    def _press(self, val):
+        cur = self.display.text()
+        if val == "C":
+            self.display.setText("0")
+        elif val == "OK":
+            v = min(int(cur or "0"), 40)
+            self.logic.update_samples(v)
+            self.accept()
+        else:
+            new = ("0" if cur == "0" else cur) + val if cur != "0" else val
+            self.display.setText(str(min(int(new), 40)))
+
+
+class WeightDialog(QDialog):
+    def __init__(self, logic, scale, parent=None):
+        super().__init__(parent)
+        self.logic = logic
+        self.setModal(True)
+        self.setWindowTitle("Select Target Weight")
+        self.setStyleSheet(f"background:{BG_CARD}; color:{WHITE};")
+
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+
+        for label, w in [("10g (Small)", 10), ("20g (Medium)", 20), ("30g (Large)", 30)]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(int(80*scale))
+            btn.setFont(QFont("", int(20*scale), QFont.Weight.Bold))
+            btn.setStyleSheet(_qss_btn(BORDER))
+            btn.clicked.connect(lambda _, ww=w: self._set(ww))
+            root.addWidget(btn)
+
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color:{BORDER};"); root.addWidget(sep)
+
+        row = QHBoxLayout()
+        self.custom_in = QLineEdit()
+        self.custom_in.setPlaceholderText("Custom (g)")
+        self.custom_in.setFixedHeight(int(70*scale))
+        self.custom_in.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.custom_in.setStyleSheet(f"background:black; color:white; border:1px solid {BORDER}; border-radius:8px; font-size:{int(18*scale)}px;")
+        row.addWidget(self.custom_in)
+
+        apply_btn = QPushButton("APPLY")
+        apply_btn.setFixedHeight(int(70*scale))
+        apply_btn.setFont(QFont("", int(18*scale), QFont.Weight.Bold))
+        apply_btn.setStyleSheet(_qss_btn(ACCENT, BLACK))
+        apply_btn.clicked.connect(self._apply_custom)
+        row.addWidget(apply_btn)
+        root.addLayout(row)
+
+    def _set(self, w):
+        self.logic.soil_weight = int(w)
+        self.logic.log(f"Soil weight target set to {w}g")
+        self.accept()
+
+    def _apply_custom(self):
+        v = self.custom_in.text()
+        if v.isdigit():
+            self._set(int(v))
+
+
+# ──────────────────────── MAIN WINDOW ──────────────────────────
+class SoilSenseWindow(QMainWindow):
+    _refresh_sig = pyqtSignal()   # thread-safe bridge
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("SoilSense v7.0")
+
+        # ── Scaling ──
+        if platform.system() == "Darwin":
+            self.SCALE = 0.5
+            self.resize(960, 600)
+        else:
+            self.SCALE = 1.0
+            self.showFullScreen()
+
+        S = self.SCALE
+        self.TXT_TINY  = int(18 * S)
+        self.TXT_MED   = int(24 * S)
+        self.TXT_LARGE = int(36 * S)
+        self.BTN_H     = int(80 * S)
+
+        # ── Logic ──
+        self.logic    = SoilSenseLogic()
+        self.ui_state = {"gantry_zeroed": False}
+
+        # Wire logic callbacks → thread-safe signal
+        self._refresh_sig.connect(self._refresh_ui)
+        self.logic.on_log_update      = lambda: self._refresh_sig.emit()
+        self.logic.on_status_update   = lambda: self._refresh_sig.emit()
+        self.logic.on_sequence_update = lambda: self._refresh_sig.emit()
+
+        # ── Video ──
+        self.VIDEO_URL = "http://127.0.0.1:5005/video_feed"
+
+        # ── Global stylesheet ──
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{ background-color:{BG_MAIN}; color:{WHITE}; }}
+            QTabWidget::pane {{ border:none; }}
+            QTabBar::tab {{
+                background:{BG_CARD}; color:{TEXT_MUTED}; padding:10px 24px;
+                border-radius:8px 8px 0 0; font-size:{self.TXT_MED}px; font-weight:bold;
+            }}
+            QTabBar::tab:selected {{ color:{ACCENT}; border-bottom:3px solid {ACCENT}; }}
+            QScrollBar:vertical {{ background:{BG_CARD}; width:8px; border-radius:4px; }}
+            QScrollBar::handle:vertical {{ background:{BORDER}; border-radius:4px; }}
+        """)
+
+        self._build_ui()
+        self._refresh_ui()
+
+    # ──────────────────────── BUILD UI ──────────────────────────
+    def _build_ui(self):
+        S = self.SCALE
+        central = QWidget()
+        self.setCentralWidget(central)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(int(20*S), int(10*S), int(20*S), int(10*S))
+        root_layout.setSpacing(int(8*S))
+
+        # Header
+        root_layout.addWidget(self._build_header())
+
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color:{BORDER};")
+        root_layout.addWidget(sep)
+
+        # Tabs
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_dashboard(), "Dashboard")
+        self.tabs.addTab(self._build_debug(),     "Manual Debug")
+        root_layout.addWidget(self.tabs)
+
+    # ── Header ──
+    def _build_header(self):
+        S = self.SCALE
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0,0,0,0)
+
+        title = QLabel("SoilSense v7.0")
+        title.setFont(QFont("", self.TXT_LARGE, QFont.Weight.Bold))
+        lay.addWidget(title)
+        lay.addStretch()
+
+        self.door_indicators   = {}
+        self.status_indicators = {}
+
+        for key, label in [("left","L Door"),("right","R Door")]:
+            dot = self._make_dot(DeviceStatus.OFFLINE.value)
+            self.door_indicators[key] = dot
+            row = QHBoxLayout(); row.setSpacing(4)
+            row.addWidget(dot); row.addWidget(self._muted_lbl(label))
+            c = QWidget(); c.setLayout(row); lay.addWidget(c)
+            lay.addSpacing(int(12*S))
+
+        for key, label in [("gantry","Gantry"),("stirrer","Stirrer"),("scoop","Scoop"),("jetson","Jetson")]:
+            dot = self._make_dot(DeviceStatus.OFFLINE.value)
+            self.status_indicators[key] = dot
+            row = QHBoxLayout(); row.setSpacing(4)
+            row.addWidget(dot); row.addWidget(self._muted_lbl(label))
+            c = QWidget(); c.setLayout(row); lay.addWidget(c)
+            lay.addSpacing(int(12*S))
+
+        return w
+
+    # ── Dashboard ──
+    def _build_dashboard(self):
+        S = self.SCALE
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, int(10*S), 0, 0)
+        outer.setSpacing(int(10*S))
+
+        # 3-column area
+        cols = QHBoxLayout()
+        cols.setSpacing(int(15*S))
+
+        # Left — camera + soil results
+        left = QVBoxLayout()
+        left.setSpacing(int(10*S))
+        left.addWidget(self._section_label("JETSON FEED"))
+        self.camera_widget = CameraWidget(
+            self.VIDEO_URL,
+            dummy=(self.logic.device_modes.get("jetson") == "dummy")
+        )
+        self.camera_widget.setMinimumHeight(int(240*S))
+        left.addWidget(self.camera_widget)
+        left.addWidget(self._section_label("SOIL RESULTS"))
+        self.soil_results_scroll, self.soil_results_layout = self._scroll_card()
+        left.addWidget(self.soil_results_scroll, 1)
+        lw = QWidget(); lw.setLayout(left)
+        cols.addWidget(lw, 1)
+
+        # Middle — scooper status
+        mid = QVBoxLayout()
+        mid.setSpacing(int(10*S))
+        mid.addWidget(self._section_label("SCOOPER STATUS"))
+        SCOOPER_STEPS = [
+            "Idle","Moving to Bag","Stirring","Analyzing","Scooping",
+            "Moving to Tube","Dispensing","Returning to Bag","Emptying"
         ]
+        self.step_indicators = {}
+        scroll, step_layout = self._scroll_card()
+        for step in SCOOPER_STEPS:
+            lbl = QLabel(step)
+            lbl.setFont(QFont("", self.TXT_TINY, QFont.Weight.Bold))
+            lbl.setStyleSheet(f"color:{TEXT_MUTED}; padding:8px; border-radius:6px;")
+            step_layout.addWidget(lbl)
+            self.step_indicators[step] = lbl
+        step_layout.addStretch()
+        mid.addWidget(scroll, 1)
+        mw = QWidget(); mw.setLayout(mid)
+        cols.addWidget(mw, 1)
 
-    tabs = ft.Tabs(
-        selected_index=0, length=2, expand=True,
-        content=ft.Column([
-            ft.TabBar(
-                tab_alignment=ft.TabAlignment.START,
-                label_text_style=ft.TextStyle(size=TXT_MED, weight="bold"),
-                tabs=[
-                    ft.Tab(label="Dashboard", icon=ft.Icons.DASHBOARD), 
-                    ft.Tab(label="Manual Debug", icon=ft.Icons.HANDYMAN)
-                ]
-            ),
-            ft.TabBarView(expand=True, controls=[dashboard, debug_view])
-        ])
-    )
+        # Right — logs
+        right = QVBoxLayout()
+        right.setSpacing(int(10*S))
+        right.addWidget(self._section_label("SYSTEM LOGS"))
+        log_card = _card_frame()
+        log_card.setStyleSheet(f"QFrame {{ background:black; border:2px solid {BORDER}; border-radius:12px; }}")
+        log_inner = QVBoxLayout(log_card)
+        self.log_scroll = QScrollArea()
+        self.log_scroll.setWidgetResizable(True)
+        self.log_scroll.setStyleSheet("QScrollArea { border:none; background:transparent; }")
+        log_container = QWidget()
+        self.log_layout = QVBoxLayout(log_container)
+        self.log_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.log_layout.setSpacing(int(3*S))
+        self.log_scroll.setWidget(log_container)
+        log_inner.addWidget(self.log_scroll)
+        right.addWidget(log_card, 1)
+        rw = QWidget(); rw.setLayout(right)
+        cols.addWidget(rw, 1)
 
-    header = ft.Row([
-        ft.Text("SoilSense v7.0", size=TXT_LARGE, weight="bold"),
-        ft.Row([
-            ft.Row([door_indicators["left"], ft.Text("L Door", size=TXT_TINY)]),
-            ft.Row([door_indicators["right"], ft.Text("R Door", size=TXT_TINY)]),
-            ft.Row([status_indicators["gantry"], ft.Text("Gantry", size=TXT_TINY)]),
-            ft.Row([status_indicators["stirrer"], ft.Text("Stirrer", size=TXT_TINY)]),
-            ft.Row([status_indicators["scoop"], ft.Text("Scoop", size=TXT_TINY)]),
-            ft.Row([status_indicators["jetson"], ft.Text("Jetson", size=TXT_TINY)]),
-        ], spacing=int(20*SCALE))
-    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        outer.addLayout(cols, 1)
 
-    page.add(header, ft.Divider(color=BORDER), tabs)
-    handle_refresh("refresh")
+        # Bottom control bar
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(f"color:{BORDER};")
+        outer.addWidget(sep2)
+        outer.addLayout(self._build_control_bar())
 
- # Make sure to: pip install requests
+        return w
 
-    
+    def _build_control_bar(self):
+        S = self.SCALE
+        bar = QHBoxLayout()
+        bar.setSpacing(int(10*S))
 
+        self.total_samples_label = QLabel()
+        self.total_samples_label.setFont(QFont("", self.TXT_MED))
+        self.total_samples_label.setStyleSheet(f"color:{TEXT_MUTED};")
+        bar.addWidget(self.total_samples_label)
+        bar.addStretch()
+
+        btn_data = [
+            ("btn_zero_gantry", "ZERO FIRST",  AMBER,  BLACK,  self._handle_zero_gantry),
+            ("btn_samples",     "SAMPLES",      BORDER, WHITE,  self._handle_samples),
+            ("btn_weight",      "WEIGHT",       BORDER, WHITE,  self._handle_weight),
+            ("btn_export",      "EXPORT",       BLUE,   WHITE,  self._handle_export),
+            ("btn_stop",        "STOP",         RED,    WHITE,  self._handle_stop),
+            ("btn_start",       "START",        ACCENT, BLACK,  self._handle_start),
+        ]
+        for attr, text, bg, fg, cb in btn_data:
+            btn = QPushButton(text)
+            btn.setFixedHeight(self.BTN_H)
+            btn.setMinimumWidth(int(120*S))
+            btn.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+            btn.setStyleSheet(_qss_btn(bg, fg))
+            btn.clicked.connect(cb)
+            setattr(self, attr, btn)
+            bar.addWidget(btn)
+
+        self.btn_stop.hide()
+        return bar
+
+    # ── Debug Tab ──
+    def _build_debug(self):
+        S = self.SCALE
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border:none; }")
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(int(20*S), int(20*S), int(20*S), int(20*S))
+        layout.setSpacing(int(15*S))
+
+        title = QLabel("HARDWARE MANUAL OVERRIDE")
+        title.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        # Device rows
+        row1 = QHBoxLayout()
+        for name in ["gantry", "stirrer", "scoop"]:
+            row1.addWidget(self._device_control(name))
+        layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        for name in ["jetson", "doors"]:
+            row2.addWidget(self._device_control(name))
+        layout.addLayout(row2)
+
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color:{BORDER};"); layout.addWidget(sep)
+
+        title2 = QLabel("DUMMY RESPONSE SETTINGS")
+        title2.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+        layout.addWidget(title2)
+
+        # Steppers
+        stepper_row = QHBoxLayout()
+        stepper_row.addWidget(self._stepper_widget("Move Time (s):", "move_time", step=0.5, is_float=True))
+        stepper_row.addWidget(self._stepper_widget("Analyze Time (s):", "analyze_time", step=0.5, is_float=True))
+        layout.addLayout(stepper_row)
+
+        soil_lbl = QLabel("Mock Soil Types (comma separated):")
+        soil_lbl.setStyleSheet(f"color:{TEXT_MUTED};")
+        soil_lbl.setFont(QFont("", self.TXT_TINY))
+        layout.addWidget(soil_lbl)
+
+        soil_input = QLineEdit(", ".join(self.logic.dummy_responses["soil_types"]))
+        soil_input.setFixedHeight(int(60*S))
+        soil_input.setStyleSheet(f"background:black; color:white; border:1px solid {BORDER}; border-radius:8px; font-size:{self.TXT_MED}px; padding:0 10px;")
+        soil_input.textChanged.connect(lambda t: self.logic.dummy_responses.update({"soil_types": [s.strip() for s in t.split(",")]}))
+        layout.addWidget(soil_input)
+
+        exit_btn = QPushButton("EXIT TO DESKTOP")
+        exit_btn.setFixedHeight(self.BTN_H)
+        exit_btn.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+        exit_btn.setStyleSheet(_qss_btn(RED))
+        exit_btn.clicked.connect(QApplication.quit)
+        layout.addWidget(exit_btn)
+        layout.addStretch()
+
+        scroll.setWidget(container)
+        return scroll
+
+    def _device_control(self, name):
+        S = self.SCALE
+        card = _card_frame()
+        lay = QVBoxLayout(card)
+        lay.setSpacing(int(10*S))
+
+        top = QHBoxLayout()
+        label = QLabel(name.upper())
+        label.setFont(QFont("", self.TXT_TINY, QFont.Weight.Bold))
+        top.addWidget(label)
+        top.addStretch()
+
+        dummy_cb = QCheckBox("Dummy Mode")
+        dummy_cb.setChecked(self.logic.device_modes[name] == "dummy")
+        dummy_cb.setStyleSheet(f"color:{WHITE}; font-size:{self.TXT_TINY}px;")
+        def _on_dummy_toggle(state, n=name):
+            mode = "dummy" if state else "real"
+            self.logic.set_device_mode(n, mode)
+            if n == "jetson":
+                self.camera_widget.set_dummy_mode(mode == "dummy")
+        dummy_cb.stateChanged.connect(_on_dummy_toggle)
+        top.addWidget(dummy_cb)
+        lay.addLayout(top)
+
+        btns = QHBoxLayout()
+        if name == "doors":
+            for side in ["left", "right"]:
+                b = QPushButton(f"Toggle {side.capitalize()}")
+                b.setFixedHeight(int(60*S))
+                b.setFont(QFont("", self.TXT_TINY))
+                b.setStyleSheet(_qss_btn(BORDER))
+                b.clicked.connect(lambda _, s=side: self.logic.toggle_dummy_door(s))
+                btns.addWidget(b)
+        else:
+            for cmd, label in [(b"CMD1", "Trigger 1"), (b"CMD2", "Trigger 2")]:
+                b = QPushButton(label)
+                b.setFixedHeight(int(60*S))
+                b.setFont(QFont("", self.TXT_TINY))
+                b.setStyleSheet(_qss_btn(BORDER))
+                b.clicked.connect(lambda _, n=name, c=cmd: self.logic.write_hardware(n, c))
+                btns.addWidget(b)
+        lay.addLayout(btns)
+        return card
+
+    def _stepper_widget(self, label_text, key, step=1, is_float=False):
+        S = self.SCALE
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(int(5*S))
+
+        lbl = QLabel(label_text)
+        lbl.setFont(QFont("", self.TXT_TINY))
+        lbl.setStyleSheet(f"color:{TEXT_MUTED};")
+        lay.addWidget(lbl)
+
+        row = QHBoxLayout()
+        row.setSpacing(int(5*S))
+
+        minus = QPushButton("−")
+        val_lbl = QLabel(str(self.logic.dummy_responses[key]))
+        val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        val_lbl.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+        val_lbl.setMinimumWidth(int(60*S))
+        plus = QPushButton("+")
+
+        for btn in [minus, plus]:
+            btn.setFixedSize(int(44*S), int(44*S))
+            btn.setFont(QFont("", self.TXT_MED))
+            btn.setStyleSheet(_qss_btn(BORDER))
+
+        def _change(delta):
+            current = float(val_lbl.text()) if is_float else int(val_lbl.text())
+            new_val = max(0.0 if is_float else 0, current + delta)
+            new_val = round(new_val, 1) if is_float else int(new_val)
+            val_lbl.setText(str(new_val))
+            self.logic.dummy_responses.update({key: new_val})
+
+        minus.clicked.connect(lambda: _change(-step))
+        plus.clicked.connect(lambda: _change(step))
+
+        row.addWidget(minus)
+        row.addWidget(val_lbl)
+        row.addWidget(plus)
+        lay.addLayout(row)
+        return w
+
+    # ─────────────────── HANDLERS ───────────────────────────────
+    def _handle_start(self):
+        threading.Thread(target=self.logic.run_sequence, daemon=True).start()
+
+    def _handle_stop(self):
+        self.logic.stop_sequence()
+        self.ui_state["gantry_zeroed"] = False
+        self._refresh_ui()
+
+    def _handle_export(self):
+        self.logic.export_results_csv()
+
+    def _handle_zero_gantry(self):
+        self.logic.zero_gantry()
+        self.ui_state["gantry_zeroed"] = True
+        self._refresh_ui()
+
+    def _handle_samples(self):
+        dlg = KeypadDialog(self.logic, self.logic.total_samples, self.SCALE, self)
+        if dlg.exec():
+            self._refresh_ui()
+
+    def _handle_weight(self):
+        dlg = WeightDialog(self.logic, self.SCALE, self)
+        if dlg.exec():
+            self._refresh_ui()
+
+    # ─────────────────── REFRESH UI ─────────────────────────────
+    def _refresh_ui(self):
+        logic = self.logic
+
+        # Logs
+        while self.log_layout.count():
+            item = self.log_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for line in logic.logs:
+            lbl = QLabel(line)
+            lbl.setFont(QFont("Courier", self.TXT_TINY))
+            lbl.setStyleSheet(f"color:{TEXT_MUTED};")
+            lbl.setWordWrap(True)
+            self.log_layout.addWidget(lbl)
+        # Auto-scroll
+        QTimer.singleShot(50, lambda: self.log_scroll.verticalScrollBar().setValue(
+            self.log_scroll.verticalScrollBar().maximum()
+        ))
+
+        # Soil results
+        while self.soil_results_layout.count() > 1:  # keep stretch
+            item = self.soil_results_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for i, data in logic.soil_results.items():
+            lbl = QLabel(f"Sample {i+1}: {data.get('classification','N/A')}")
+            lbl.setFont(QFont("", self.TXT_TINY))
+            lbl.setStyleSheet(f"color:{WHITE};")
+            self.soil_results_layout.insertWidget(i, lbl)
+
+        # Samples / weight label
+        self.total_samples_label.setText(
+            f"Target: {logic.total_samples} samples | {logic.soil_weight}g"
+        )
+
+        # Status dots
+        for device, indicator in self.status_indicators.items():
+            indicator.setStyleSheet(
+                f"background:{logic.statuses[device].value}; border-radius:{indicator.width()//2}px;"
+            )
+        self.door_indicators["left"].setStyleSheet(
+            f"background:{logic.door_statuses['left'].value}; border-radius:{self.door_indicators['left'].width()//2}px;"
+        )
+        self.door_indicators["right"].setStyleSheet(
+            f"background:{logic.door_statuses['right'].value}; border-radius:{self.door_indicators['right'].width()//2}px;"
+        )
+
+        # Start/stop button states
+        if logic.isRunning:
+            self.btn_start.setText("RUNNING")
+            self.btn_start.setDisabled(True)
+        elif not self.ui_state["gantry_zeroed"]:
+            self.btn_start.setText("ZERO FIRST")
+            self.btn_start.setDisabled(True)
+            self.btn_zero_gantry.setStyleSheet(_qss_btn(AMBER, BLACK))
+        else:
+            self.btn_start.setText("START")
+            self.btn_start.setDisabled(False)
+            self.btn_zero_gantry.setStyleSheet(_qss_btn(BORDER))
+
+        self.btn_stop.setVisible(logic.isRunning)
+        self.btn_samples.setDisabled(logic.isRunning)
+        self.btn_weight.setDisabled(logic.isRunning)
+
+        # Step highlighter
+        for step, lbl in self.step_indicators.items():
+            if logic.scooper_status == step:
+                lbl.setStyleSheet(f"background:{ACCENT}; color:black; padding:8px; border-radius:6px; font-weight:bold;")
+            else:
+                lbl.setStyleSheet(f"color:{TEXT_MUTED}; padding:8px; border-radius:6px;")
+
+    # ─────────────── HELPERS ────────────────────────────────────
+    def _make_dot(self, color: str) -> QLabel:
+        S = self.SCALE
+        size = int(24 * S)
+        dot = QLabel()
+        dot.setFixedSize(size, size)
+        dot.setStyleSheet(f"background:{color}; border-radius:{size//2}px;")
+        return dot
+
+    def _muted_lbl(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setFont(QFont("", self.TXT_TINY))
+        lbl.setStyleSheet(f"color:{TEXT_MUTED};")
+        return lbl
+
+    def _section_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
+        lbl.setStyleSheet(f"color:{TEXT_MUTED};")
+        return lbl
+
+    def _scroll_card(self):
+        """Returns (QScrollArea_inside_card_frame, inner QVBoxLayout)."""
+        card = _card_frame()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(4,4,4,4)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border:none; background:transparent; }")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        inner = QWidget()
+        inner.setStyleSheet("background:transparent;")
+        layout = QVBoxLayout(inner)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setSpacing(int(5 * self.SCALE))
+        layout.addStretch()
+        scroll.setWidget(inner)
+        card_layout.addWidget(scroll)
+
+        # return the card (to add to parent) + inner layout (to populate)
+        return card, layout
+
+    def closeEvent(self, event):
+        self.camera_widget.stop()
+        super().closeEvent(event)
+
+
+# ──────────────────────── ENTRY POINT ──────────────────────────
 if __name__ == "__main__":
-    ft.run(main)
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    # Dark palette fallback
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window,          QColor(BG_MAIN))
+    palette.setColor(QPalette.ColorRole.WindowText,      QColor(WHITE))
+    palette.setColor(QPalette.ColorRole.Base,            QColor(BG_CARD))
+    palette.setColor(QPalette.ColorRole.AlternateBase,   QColor(BORDER))
+    palette.setColor(QPalette.ColorRole.ToolTipBase,     QColor(WHITE))
+    palette.setColor(QPalette.ColorRole.ToolTipText,     QColor(WHITE))
+    palette.setColor(QPalette.ColorRole.Text,            QColor(WHITE))
+    palette.setColor(QPalette.ColorRole.Button,          QColor(BG_CARD))
+    palette.setColor(QPalette.ColorRole.ButtonText,      QColor(WHITE))
+    palette.setColor(QPalette.ColorRole.Highlight,       QColor(ACCENT))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(BLACK))
+    app.setPalette(palette)
+
+    win = SoilSenseWindow()
+    win.show()
+    sys.exit(app.exec())

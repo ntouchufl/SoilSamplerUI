@@ -382,6 +382,7 @@ class SoilSenseLogic:
         if not all(status in [DeviceStatus.ONLINE, DeviceStatus.DUMMY] for status in self.statuses.values()):
             self.log("Cannot start: Hardware offline.")
             return
+            
         self.isRunning = True
         self.soil_results = {}
         self.log(f"Starting analysis of {self.total_samples} samples (Target: {self.soil_weight}g)...")
@@ -397,17 +398,27 @@ class SoilSenseLogic:
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Stirrer to Bag ({x},{y})...")
             self.write_hardware("gantry", f"B{x}{y}")
+            if not self.isRunning: break
             
             # 2. Stir + take image
             self.scooper_status = "Stirring"
             self.log(f"Sample {i+1}: Stirring...")
             self.write_hardware("stirrer", "START")
-            time.sleep(2)
+            
+            # Use a responsive sleep loop so it can be interrupted instantly
+            for _ in range(20):
+                if not self.isRunning: break
+                time.sleep(0.1)
+                
+            if not self.isRunning: break
             self.write_hardware("stirrer", "STOP")
+            if not self.isRunning: break
             
             self.scooper_status = "Analyzing"
             self.log(f"Sample {i+1}: Analyzing...")
             status, raw_res, img = self.communicate_with_jetson("A")
+            if not self.isRunning: break
+            
             if status.startswith("Y") and raw_res:
                 try:
                     data = json.loads(raw_res)
@@ -423,13 +434,19 @@ class SoilSenseLogic:
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Scooper to Bag ({x},{y})...")
             self.write_hardware("gantry", f"B{x}{y}")
+            if not self.isRunning: break
             
             # 4. scoop() sequence
             self.scooper_status = "Scooping"
             self.log(f"Sample {i+1}: Performing Scoop Sequence...")
             self.write_hardware("scoop", "U")  # Open scoop
+            if not self.isRunning: break
+            
             self.write_hardware("scoop", "FD") # Flip down
+            if not self.isRunning: break
+            
             res = self.write_hardware("scoop", "L")  # Lower
+            if not self.isRunning: break
             
             if res == "F1":
                 self.log(f"WARNING: Bag {i+1} appears EMPTY. Skipping.")
@@ -438,31 +455,42 @@ class SoilSenseLogic:
                 continue
 
             self.write_hardware("scoop", "S")  # Close scoop
+            if not self.isRunning: break
             self.write_hardware("scoop", "R")  # Raise
+            if not self.isRunning: break
             self.write_hardware("scoop", "FU") # Flip up (Dispenser bottom)
+            if not self.isRunning: break
 
             # 5. Gantry move to tube
             self.scooper_status = "Moving to Tube"
             self.log(f"Sample {i+1}: Moving to Tube ({x},{y})...")
             self.write_hardware("gantry", f"T{x}{y}")
+            if not self.isRunning: break
 
             # 6. dispense(soilWeight)
             self.scooper_status = "Dispensing"
             self.log(f"Sample {i+1}: Dispensing {self.soil_weight}g...")
             self.write_hardware("scoop", f"D{self.soil_weight}")
+            if not self.isRunning: break
 
             # 7. gantry move scoop back to bag
             self.scooper_status = "Returning to Bag"
             self.log(f"Sample {i+1}: Returning to Bag to clear scoop...")
             self.write_hardware("gantry", f"B{x}{y}")
+            if not self.isRunning: break
 
             # 8. empty()
             self.scooper_status = "Emptying"
             self.log(f"Sample {i+1}: Vacating remaining soil...")
             self.write_hardware("scoop", "E")
+            if not self.isRunning: break
 
         self.scooper_status = "Idle"
-        self.log("Analysis Complete.")
+        if self.isRunning:
+            self.log("Analysis Complete.")
+        else:
+            self.log("Sequence Stopped by User.")
+        
         self.isRunning = False
         if self.on_sequence_update: self.on_sequence_update()
 
