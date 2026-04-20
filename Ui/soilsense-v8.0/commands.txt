@@ -18,21 +18,19 @@ Errors:
 
 Scoop:
 SCOOP = "S"
-UNSCOOP = "U"
-FLIP_DOWN = "FD"
-FLIP_UP = "FU"
-LOWER = "L"
-RAISE = "R"
 DISPENSE = "D<weight>"
 EMPTY = "E"
+QUIT = "Q"
 
 Return-
 Yxxxx
 F(code)
+"E" - Empty Bag
 
 Errors:
 1 - BAG EMPTY (Load cell didn't trigger)
 2 - OVERTRAVEL
+3 - Invalid Command
 
 Jetson:
 ANALYZE = "A"

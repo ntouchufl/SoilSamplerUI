@@ -15,7 +15,7 @@ from datetime import datetime
 # REPLACE THESE WITH YOUR ACTUAL ARDUINO SERIAL NUMBERS
 GANTRY_SERIAL = "48CA435A3A20" 
 STIRRER_SERIAL = "0987654321FEDCBA"
-SCOOP_SERIAL = "5555555555123456"
+SCOOP_SERIAL = "14532303532351D011A2"
 
 JETSON_IP = "10.42.0.76"
 JETSON_PORT = 5005
@@ -137,7 +137,7 @@ class SoilSenseLogic:
         self.log("Scanning USB bus for hardware...")
         
         serial_map = {"gantry": GANTRY_SERIAL, "stirrer": STIRRER_SERIAL, "scoop": SCOOP_SERIAL}
-        baud_map = {"gantry": 115200, "stirrer": 9600, "scoop": 9600}
+        baud_map = {"gantry": 115200, "stirrer": 9600, "scoop": 115200}
         
         for device in ["gantry", "stirrer", "scoop"]:
             if self.device_modes[device] == "dummy":
@@ -436,36 +436,24 @@ class SoilSenseLogic:
             self.write_hardware("gantry", f"B{x}{y}")
             if not self.isRunning: break
             
+            time.sleep(2.0) # Wait for gantry to stabilize before scooping  
+
             # 4. scoop() sequence
             self.scooper_status = "Scooping"
             self.log(f"Sample {i+1}: Performing Scoop Sequence...")
-            self.write_hardware("scoop", "U")  # Open scoop
+            self.write_hardware("scoop", "S")  # Open scoop
             if not self.isRunning: break
             
-            self.write_hardware("scoop", "FD") # Flip down
-            if not self.isRunning: break
-            
-            res = self.write_hardware("scoop", "L")  # Lower
-            if not self.isRunning: break
-            
-            if res == "F1":
-                self.log(f"WARNING: Bag {i+1} appears EMPTY. Skipping.")
-                self.write_hardware("scoop", "R")
-                self.write_hardware("scoop", "FU")
-                continue
+            #add case for "E" response from scoop which indicates empty bag and should skip to next sample
 
-            self.write_hardware("scoop", "S")  # Close scoop
-            if not self.isRunning: break
-            self.write_hardware("scoop", "R")  # Raise
-            if not self.isRunning: break
-            self.write_hardware("scoop", "FU") # Flip up (Dispenser bottom)
-            if not self.isRunning: break
 
             # 5. Gantry move to tube
             self.scooper_status = "Moving to Tube"
             self.log(f"Sample {i+1}: Moving to Tube ({x},{y})...")
             self.write_hardware("gantry", f"T{x}{y}")
             if not self.isRunning: break
+
+            time.sleep(2.0)
 
             # 6. dispense(soilWeight)
             self.scooper_status = "Dispensing"
@@ -478,6 +466,8 @@ class SoilSenseLogic:
             self.log(f"Sample {i+1}: Returning to Bag to clear scoop...")
             self.write_hardware("gantry", f"B{x}{y}")
             if not self.isRunning: break
+
+            time.sleep(2.0)
 
             # 8. empty()
             self.scooper_status = "Emptying"
