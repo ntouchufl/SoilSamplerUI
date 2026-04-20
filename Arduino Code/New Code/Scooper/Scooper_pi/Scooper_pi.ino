@@ -27,7 +27,7 @@ Servo servoDispense;
 const int stepPin = 3; //step is plugged into pin 3
 const int dirPin = 2; //dir is plugged into pin 2
 const int MAX_STEPS = 1400; // 100mm of travel w/pitch 1mm and 200 steps/rev, 1400 ish
-const int MOTOR_DIR = -1;  // Sign convention is - speed is down in code. This flips it
+const int MOTOR_DIR = 1;  // Sign convention is - speed is down in code. This flips it
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin); //create stepper object
 
 //pin setup for stepper steps
@@ -87,7 +87,7 @@ void setup() {
   Serial.begin(115200);  // open a serial connection
   delay(1000);
 
-  Serial.println("Type Command (scoopSoil, dispenseIntoTestVessel, emptyScoop)");
+  //Serial.println("Type Command (scoopSoil, dispenseIntoTestVessel, emptyScoop)");
 }
 
 void loop() {
@@ -95,7 +95,7 @@ void loop() {
     command = Serial.readStringUntil('\n');
     command.trim(); //deletes surrounding whitespace from command
     if(command[0] == 'S'){
-      digitalWrite(LED_BUILTIN, HIGH);
+      //digitalWrite(LED_BUILTIN, HIGH);
       scoop();
     }
     else if(command[0] == 'D'){
@@ -117,12 +117,15 @@ void loop() {
   }
 }
 
+
+
 void zeroActuator() {
   // First, move away from limit switch if it's already pressed
   stepper.setCurrentPosition(0);
   stepper.setSpeed(500 * MOTOR_DIR); // Move in reverse direction
   unsigned long timeout = millis() + 5000; // 5 second timeout
-  while (limitSwitch.getState() == HIGH && millis() < timeout) {
+  while (limitSwitch.getState() == LOW && millis() < timeout) {
+    digitalWrite(LED_BUILTIN, HIGH);
     limitSwitch.loop();
     stepper.runSpeed();
   }
@@ -133,7 +136,8 @@ void zeroActuator() {
   // Move forward until limit switch is pressed
   stepper.setSpeed(-400 * MOTOR_DIR); // Set the speed (positive for one direction)
   timeout = millis() + 60000; // 60 second timeout for safety
-  while (limitSwitch.getState() == LOW && millis() < timeout) {
+  while (limitSwitch.getState() == HIGH && millis() < timeout) {
+    digitalWrite(LED_BUILTIN, LOW);
     limitSwitch.loop();
     stepper.runSpeed(); // Run at constant speed
   }
@@ -148,7 +152,7 @@ void zeroActuator() {
 void resetAll() {
   servoFlip.write(2550);
   servoScoop.write(2550);
-  servoDispense.write(1500);
+  servoDispense.write(500);
   delay(2000);
   zeroActuator(); //calibrates the position of the scoop through the stepper
   delay(1000);
@@ -179,7 +183,7 @@ void scoop(){
   stepper.stop(); // Ensure motor stops
   //send out error if bag empty (if loadcells don't detect impact with soil)
   if (abs((loadcellL.get_units(10) + loadcellR.get_units(10)) / 2) < 50){
-    Serial.println("E"); 
+    //Serial.println("E"); 
   }
   delay(2000);
 

@@ -14,7 +14,7 @@ from datetime import datetime
 # --- CONFIGURATION ---
 # REPLACE THESE WITH YOUR ACTUAL ARDUINO SERIAL NUMBERS
 GANTRY_SERIAL = "48CA435A3A20" 
-STIRRER_SERIAL = "0987654321FEDCBA"
+STIRRER_SERIAL = "1344A474030351B0F919"
 SCOOP_SERIAL = "14532303532351D011A2"
 
 JETSON_IP = "10.42.0.76"
@@ -75,8 +75,8 @@ class SoilSenseLogic:
         self.device_modes = {
             "gantry": "dummy",
             "stirrer": "dummy",
-            "scoop": "dummy",
-            "jetson": "real", # Keeping Jetson dummy until you have the script running
+            "scoop": "real",
+            "jetson": "dummy", # Keeping Jetson dummy until you have the script running
             "doors": "real"
         }
         
@@ -345,7 +345,7 @@ class SoilSenseLogic:
     def read_hardware(self, device):
         current_time = time.time()
         if self.ports.get(device):
-            while time.time() - current_time < 30:
+            while time.time() - current_time < 120:
                 try:
                     data = self.ports[device].readline().decode().strip()
                     if data: 
