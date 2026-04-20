@@ -1,5 +1,5 @@
 """
-SoilSense v7.0 — PyQt6 Rewrite
+SoilSense v8.0 — PyQt6 Rewrite
 Replaces Flet with PyQt6. Camera feed reads MJPEG stream from a URL.
 """
 
@@ -298,7 +298,7 @@ class SoilSenseWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SoilSense v7.0")
+        self.setWindowTitle("SoilSense v8.0")
 
         # ── Scaling ──
         if platform.system() == "Darwin":
@@ -372,7 +372,7 @@ class SoilSenseWindow(QMainWindow):
         lay = QHBoxLayout(w)
         lay.setContentsMargins(0,0,0,0)
 
-        title = QLabel("SoilSense v7.0")
+        title = QLabel("SoilSense v8.0")
         title.setFont(QFont("", self.TXT_LARGE, QFont.Weight.Bold))
         lay.addWidget(title)
         lay.addStretch()

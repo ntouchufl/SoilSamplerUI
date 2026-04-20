@@ -1,4 +1,4 @@
-#!/Users/noahtouchton/School_Git/SoilGit/.venv/bin/python
+#!/home/admin/SoilSamplerGit/SoilSamplerUI/.venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
