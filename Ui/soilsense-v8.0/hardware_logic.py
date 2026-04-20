@@ -590,4 +590,4 @@ class SoilSenseLogic:
 
     def zero_gantry(self):
         self.log("Zeroing gantry...")
-        self.write_hardware("gantry", "Z")
+        self.write_hardware("gantry", "H")
