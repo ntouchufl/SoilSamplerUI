@@ -413,21 +413,39 @@ class SoilSenseLogic:
             # 1. Gantry move stirrer to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Stirrer to Bag ({x},{y})...")
-            response = self.write_hardware("gantry", f"B{x}{y}")
+            response = self.write_hardware("gantry", f"M{x}{y}")
             if not response.startswith("Y"):
                 self.log(f"Error on Sample {i+1}: No confirmation from gantry. Halting.")
                 self.stop_sequence()
                 break # Stop the sequence from moving to the next step
     
             if not self.isRunning: break
-            
-            # 2. Stir + take image
-            self.scooper_status = "Stirring"
-            self.log(f"Sample {i+1}: Stirring...")
-            response = self.write_hardware("stirrer", "START")
 
+            # 2. Stirrer stir
+            self.scooper_status = "Stirring"
+            self.log(f"Sample {i+1}: Stirring sample in bag...")
+            response = self.write_hardware("stirrer", "START")
             if not response.startswith("Y"):
                 self.log(f"Error on Sample {i+1}: No confirmation from stirrer. Halting.")
+                self.stop_sequence()
+                break # Stop the sequence from moving to the next step
+            
+            # 3. Move Camera to sample
+            self.scooper_status = "Positioning Camera"
+            self.log(f"Sample {i+1}: Positioning Camera at ({x},{y})...")
+            response = self.write_hardware("gantry", f"C{x}{y}")
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from gantry for camera. Halting.")
+                self.stop_sequence()
+                break # Stop the sequence from moving to the next step
+
+            # 4. Take image
+            self.scooper_status = "Taking Image"
+            self.log(f"Sample {i+1}: Taking Image...")
+            response = self.write_hardware("camera", "SNAP")
+
+            if not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from camera. Halting.")
                 self.stop_sequence()
                 break # Stop the sequence from moving to the next step
 
@@ -436,12 +454,7 @@ class SoilSenseLogic:
                 if not self.isRunning: break
                 time.sleep(0.1)
                 
-            if not self.isRunning: break
-            response = self.write_hardware("stirrer", "STOP")
-            if not response.startswith("Y"):
-                self.log(f"Error on Sample {i+1}: No confirmation from stirrer. Halting.")
-                self.stop_sequence()
-                break
+            
 
             self.scooper_status = "Analyzing"
             self.log(f"Sample {i+1}: Analyzing...")
@@ -459,7 +472,7 @@ class SoilSenseLogic:
             self.last_image = img
             if self.on_sequence_update: self.on_sequence_update()
 
-            # 3. Gantry move scooper to bag
+            # 5. Gantry move scooper to bag
             self.scooper_status = "Moving to Bag"
             self.log(f"Sample {i+1}: Moving Scooper to Bag ({x},{y})...")
             response = self.write_hardware("gantry", f"B{x}{y}")
@@ -468,7 +481,7 @@ class SoilSenseLogic:
                 self.stop_sequence()
                 break
 
-            # 4. scoop() sequence
+            # 6. scoop() sequence
             self.scooper_status = "Scooping"
             self.log(f"Sample {i+1}: Performing Scoop Sequence...")
             response = self.write_hardware("scoop", "S")  # Open scoop
@@ -479,11 +492,15 @@ class SoilSenseLogic:
                 self.soil_results[i] = {"classification": "Empty"}
                 if self.on_sequence_update: self.on_sequence_update()
                 continue
+            elif not response.startswith("Y"):
+                self.log(f"Error on Sample {i+1}: No confirmation from scoop. Halting.")
+                self.stop_sequence()
+                break
 
             time.sleep(2.0)
 
 
-            # 5. Gantry move to tube
+            # 7. Gantry move to tube
             self.scooper_status = "Moving to Tube"
             self.log(f"Sample {i+1}: Moving to Tube ({x},{y})...")
             response = self.write_hardware("gantry", f"T{x}{y}")
@@ -494,7 +511,7 @@ class SoilSenseLogic:
 
             time.sleep(2.0)
 
-            # 6. dispense(soilWeight)
+            # 8. dispense(soilWeight)
             self.scooper_status = "Dispensing"
             self.log(f"Sample {i+1}: Dispensing {self.soil_weight}g...")
             response = self.write_hardware("scoop", f"D{self.soil_weight}")
@@ -503,7 +520,7 @@ class SoilSenseLogic:
                 self.stop_sequence()
                 break
 
-            # 7. gantry move scoop back to bag
+            # 9. gantry move scoop back to bag
             self.scooper_status = "Returning to Bag"
             self.log(f"Sample {i+1}: Returning to Bag to clear scoop...")
             response = self.write_hardware("gantry", f"B{x}{y}")
@@ -514,7 +531,7 @@ class SoilSenseLogic:
 
             time.sleep(2.0)
 
-            # 8. empty()
+            # 9. empty()
             self.scooper_status = "Emptying"
             self.log(f"Sample {i+1}: Vacating remaining soil...")
             response = self.write_hardware("scoop", "E")

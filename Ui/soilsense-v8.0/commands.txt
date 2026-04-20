@@ -1,6 +1,9 @@
 Gantry:
-MOVE to BAG X,Y = "BXY"
-MOVE to TUBE X,Y = "TXY"
+MOVE scoop to BAG X,Y = "BXY"
+MOVE scoop to TUBE X,Y = "TXY"
+MOVE mixer to X,Y = "MXY"
+MOVE camera to X,Y = "CXY"
+
 GO HOME = "H"
 ZERO = "Z"
 STOP = "S"
