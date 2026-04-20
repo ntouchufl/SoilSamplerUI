@@ -1,0 +1,42 @@
+Gantry:
+MOVE to BAG X,Y = "BXY"
+MOVE to TUBE X,Y = "TXY"
+GO HOME = "H"
+ZERO = "Z"
+STOP = "S"
+MOTOR ON = "M1"
+MOTOR OFF = "M0"
+
+Return-
+Yxxxx (Success with elapsed time in ms)
+F(code) (Failure with error code)
+
+Errors: 
+0 - UNKNOWN COMMAND
+1 - INDEX OUT OF RANGE
+2 - LIMIT HIT / EMERGENCY STOP
+
+Scoop:
+SCOOP = "S"
+UNSCOOP = "U"
+FLIP_DOWN = "FD"
+FLIP_UP = "FU"
+LOWER = "L"
+RAISE = "R"
+DISPENSE = "D<weight>"
+EMPTY = "E"
+
+Return-
+Yxxxx
+F(code)
+
+Errors:
+1 - BAG EMPTY (Load cell didn't trigger)
+2 - OVERTRAVEL
+
+Jetson:
+ANALYZE = "A"
+
+Return-
+Yxxxx (followed by JSON data)
+F(code)

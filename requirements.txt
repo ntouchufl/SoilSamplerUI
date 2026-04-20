@@ -1,3 +1,4 @@
-flet
+PyQt6
 pyserial
 gpiozero; platform_system != "Darwin"
+
