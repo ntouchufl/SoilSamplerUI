@@ -591,3 +591,32 @@ class SoilSenseLogic:
     def zero_gantry(self):
         self.log("Zeroing gantry...")
         self.write_hardware("gantry", "H")
+
+    def calibrate_scoop(self) -> bool:
+        """
+        Sends 'C' to the scoop and waits for a 'Y' response.
+        Returns True if successful, False if it times out.
+        """
+        if self.device_modes.get("scoop") == "dummy":
+            import time
+            time.sleep(1.5)  # Simulate the wait time
+            return True
+            
+        # Send 'C' to the scoop
+        self.write_hardware("scoop", b"C\n")
+        
+        # Block and wait for 'Y'
+        import time
+        start_time = time.time()
+        timeout = 10.0 # Adjust based on how long calibration actually takes
+        
+        while time.time() - start_time < timeout:
+            # Note: Implement your actual serial read logic here!
+            # Example:
+            # response = self._read_serial_line("scoop")
+            # if response and "Y" in response:
+            #     return True
+            
+            time.sleep(0.1) # Prevent CPU spinning
+            
+        return False

@@ -32,13 +32,8 @@ WHITE       = "#ffffff"
 BLACK       = "#000000"
 
 
-# soilsense-v8.0/main.py
-
 def _qss_btn(bg, fg="#ffffff", radius=12):
-    # Determine a specific hover color. 
-    # If the background is the ACCENT green (#00ff41), we'll use a darker forest green.
     hover_color = "#00cc33" if bg == ACCENT else f"{bg}cc"
-    
     return f"""
         QPushButton {{
             background-color: {bg};
@@ -68,7 +63,6 @@ def _card_frame(parent=None):
 
 # ─────────────────────── MJPEG STREAM THREAD ───────────────────
 class MjpegThread(QThread):
-    """Reads an MJPEG stream from a URL and emits QPixmap frames."""
     frame_ready = pyqtSignal(QPixmap)
     error       = pyqtSignal(str)
 
@@ -92,7 +86,6 @@ class MjpegThread(QThread):
                 self.error.emit(str(e))
                 break
 
-            # Find JPEG boundaries
             start = buf.find(b"\xff\xd8")
             end   = buf.find(b"\xff\xd9")
             if start != -1 and end != -1 and end > start:
@@ -109,11 +102,6 @@ class MjpegThread(QThread):
 
 # ──────────────────────── CAMERA WIDGET ────────────────────────
 class CameraWidget(QLabel):
-    """
-    Shows a live MJPEG stream in real mode.
-    In dummy mode the stream is killed and a static placeholder is shown.
-    Call set_dummy_mode(True/False) to switch at runtime.
-    """
     def __init__(self, url: str, dummy: bool = False, parent=None):
         super().__init__(parent)
         self._url    = url
@@ -125,10 +113,8 @@ class CameraWidget(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(200)
 
-        # Initialise in whatever mode is requested
         self.set_dummy_mode(dummy)
 
-    # ── public API ──────────────────────────────────────────────
     def set_dummy_mode(self, is_dummy: bool):
         if is_dummy:
             self._stop_stream()
@@ -140,9 +126,8 @@ class CameraWidget(QLabel):
     def stop(self):
         self._stop_stream()
 
-    # ── stream lifecycle ────────────────────────────────────────
     def _start_stream(self):
-        self._stop_stream()                        # kill any previous thread
+        self._stop_stream()
         self._thread = MjpegThread(self._url)
         self._thread.frame_ready.connect(self._on_frame)
         self._thread.error.connect(self._on_error)
@@ -154,7 +139,6 @@ class CameraWidget(QLabel):
             self._thread.wait(2000)
         self._thread = None
 
-    # ── display helpers ─────────────────────────────────────────
     def _show_connecting(self):
         self.clear()
         self.setText("Connecting to stream...")
@@ -172,7 +156,6 @@ class CameraWidget(QLabel):
         )
 
     def _on_frame(self, pixmap: QPixmap):
-        # Clear placeholder text on first real frame
         if self.text():
             self.clear()
             self.setStyleSheet(
@@ -294,13 +277,12 @@ class WeightDialog(QDialog):
 
 # ──────────────────────── MAIN WINDOW ──────────────────────────
 class SoilSenseWindow(QMainWindow):
-    _refresh_sig = pyqtSignal()   # thread-safe bridge
+    _refresh_sig = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SoilSense v8.0")
 
-        # ── Scaling ──
         if platform.system() == "Darwin":
             self.SCALE = 0.5
             self.resize(960, 600)
@@ -314,20 +296,21 @@ class SoilSenseWindow(QMainWindow):
         self.TXT_LARGE = int(36 * S)
         self.BTN_H     = int(80 * S)
 
-        # ── Logic ──
         self.logic    = SoilSenseLogic()
-        self.ui_state = {"gantry_zeroed": False}
+        
+        # ADDED scoop_calibrated STATE HERE
+        self.ui_state = {
+            "gantry_zeroed": False,
+            "scoop_calibrated": False 
+        }
 
-        # Wire logic callbacks → thread-safe signal
         self._refresh_sig.connect(self._refresh_ui)
         self.logic.on_log_update      = lambda: self._refresh_sig.emit()
         self.logic.on_status_update   = lambda: self._refresh_sig.emit()
         self.logic.on_sequence_update = lambda: self._refresh_sig.emit()
 
-        # ── Video ──
         self.VIDEO_URL = "http://127.0.0.1:5005/video_feed"
 
-        # ── Global stylesheet ──
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{ background-color:{BG_MAIN}; color:{WHITE}; }}
             QTabWidget::pane {{ border:none; }}
@@ -343,7 +326,6 @@ class SoilSenseWindow(QMainWindow):
         self._build_ui()
         self._refresh_ui()
 
-    # ──────────────────────── BUILD UI ──────────────────────────
     def _build_ui(self):
         S = self.SCALE
         central = QWidget()
@@ -352,20 +334,17 @@ class SoilSenseWindow(QMainWindow):
         root_layout.setContentsMargins(int(20*S), int(10*S), int(20*S), int(10*S))
         root_layout.setSpacing(int(8*S))
 
-        # Header
         root_layout.addWidget(self._build_header())
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color:{BORDER};")
         root_layout.addWidget(sep)
 
-        # Tabs
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_dashboard(), "Dashboard")
         self.tabs.addTab(self._build_debug(),     "Manual Debug")
         root_layout.addWidget(self.tabs)
 
-    # ── Header ──
     def _build_header(self):
         S = self.SCALE
         w = QWidget()
@@ -398,7 +377,6 @@ class SoilSenseWindow(QMainWindow):
 
         return w
 
-    # ── Dashboard ──
     def _build_dashboard(self):
         S = self.SCALE
         w = QWidget()
@@ -406,11 +384,9 @@ class SoilSenseWindow(QMainWindow):
         outer.setContentsMargins(0, int(10*S), 0, 0)
         outer.setSpacing(int(10*S))
 
-        # 3-column area
         cols = QHBoxLayout()
         cols.setSpacing(int(15*S))
 
-        # Left — camera + soil results
         left = QVBoxLayout()
         left.setSpacing(int(10*S))
         left.addWidget(self._section_label("JETSON FEED"))
@@ -426,22 +402,13 @@ class SoilSenseWindow(QMainWindow):
         lw = QWidget(); lw.setLayout(left)
         cols.addWidget(lw, 1)
 
-        # Middle — scooper status
         mid = QVBoxLayout()
         mid.setSpacing(int(10*S))
         mid.addWidget(self._section_label("SCOOPER STATUS"))
         SCOOPER_STEPS = [
-            "Idle",
-            "Moving to Bag",
-            "Stirring",
-            "Positioning Camera",
-            "Taking Image",
-            "Analyzing",
-            "Scooping",
-            "Moving to Tube",
-            "Dispensing",
-            "Returning to Bag",
-            "Emptying"
+            "Idle", "Moving to Bag", "Stirring", "Positioning Camera",
+            "Taking Image", "Analyzing", "Scooping", "Moving to Tube",
+            "Dispensing", "Returning to Bag", "Emptying"
         ]
         self.step_indicators = {}
         scroll, step_layout = self._scroll_card()
@@ -456,7 +423,6 @@ class SoilSenseWindow(QMainWindow):
         mw = QWidget(); mw.setLayout(mid)
         cols.addWidget(mw, 1)
 
-        # Right — logs
         right = QVBoxLayout()
         right.setSpacing(int(10*S))
         right.addWidget(self._section_label("SYSTEM LOGS"))
@@ -478,7 +444,6 @@ class SoilSenseWindow(QMainWindow):
 
         outer.addLayout(cols, 1)
 
-        # Bottom control bar
         sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet(f"color:{BORDER};")
         outer.addWidget(sep2)
@@ -497,14 +462,17 @@ class SoilSenseWindow(QMainWindow):
         bar.addWidget(self.total_samples_label)
         bar.addStretch()
 
+        # ADDED btn_calibrate_scoop TO THE LIST
         btn_data = [
-            ("btn_zero_gantry", "ZERO FIRST",  AMBER,  BLACK,  self._handle_zero_gantry),
-            ("btn_samples",     "SAMPLES",      BORDER, WHITE,  self._handle_samples),
-            ("btn_weight",      "WEIGHT",       BORDER, WHITE,  self._handle_weight),
-            ("btn_export",      "EXPORT",       BLUE,   WHITE,  self._handle_export),
-            ("btn_stop",        "STOP",         RED,    WHITE,  self._handle_stop),
-            ("btn_start",       "START",        ACCENT, BLACK,  self._handle_start),
+            ("btn_zero_gantry",     "ZERO FIRST",   AMBER,  BLACK,  self._handle_zero_gantry),
+            ("btn_calibrate_scoop", "CAL. SCOOP",   BORDER, WHITE,  self._handle_calibrate_scoop),
+            ("btn_samples",         "SAMPLES",      BORDER, WHITE,  self._handle_samples),
+            ("btn_weight",          "WEIGHT",       BORDER, WHITE,  self._handle_weight),
+            ("btn_export",          "EXPORT",       BLUE,   WHITE,  self._handle_export),
+            ("btn_stop",            "STOP",         RED,    WHITE,  self._handle_stop),
+            ("btn_start",           "START",        ACCENT, BLACK,  self._handle_start),
         ]
+        
         for attr, text, bg, fg, cb in btn_data:
             btn = QPushButton(text)
             btn.setFixedHeight(self.BTN_H)
@@ -518,7 +486,6 @@ class SoilSenseWindow(QMainWindow):
         self.btn_stop.hide()
         return bar
 
-    # ── Debug Tab ──
     def _build_debug(self):
         S = self.SCALE
         scroll = QScrollArea()
@@ -534,7 +501,6 @@ class SoilSenseWindow(QMainWindow):
         title.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
         layout.addWidget(title)
 
-        # Device rows
         row1 = QHBoxLayout()
         for name in ["gantry", "stirrer", "scoop"]:
             row1.addWidget(self._device_control(name))
@@ -552,7 +518,6 @@ class SoilSenseWindow(QMainWindow):
         title2.setFont(QFont("", self.TXT_MED, QFont.Weight.Bold))
         layout.addWidget(title2)
 
-        # Steppers
         stepper_row = QHBoxLayout()
         stepper_row.addWidget(self._stepper_widget("Move Time (s):", "move_time", step=0.5, is_float=True))
         stepper_row.addWidget(self._stepper_widget("Analyze Time (s):", "analyze_time", step=0.5, is_float=True))
@@ -672,7 +637,9 @@ class SoilSenseWindow(QMainWindow):
 
     def _handle_stop(self):
         self.logic.stop_sequence()
+        # Reset constraints when stopped
         self.ui_state["gantry_zeroed"] = False
+        self.ui_state["scoop_calibrated"] = False
         self._refresh_ui()
 
     def _handle_export(self):
@@ -682,6 +649,26 @@ class SoilSenseWindow(QMainWindow):
         self.logic.zero_gantry()
         self.ui_state["gantry_zeroed"] = True
         self._refresh_ui()
+
+    # ADDED: Calibrate Scoop Handler and Threading
+    def _handle_calibrate_scoop(self):
+        self.btn_calibrate_scoop.setText("CALIBRATING...")
+        self.btn_calibrate_scoop.setDisabled(True)
+        threading.Thread(target=self._thread_calibrate_scoop, daemon=True).start()
+
+    def _thread_calibrate_scoop(self):
+        self.logic.log("Sending 'C' to scoop to begin calibration...")
+        
+        # This calls the method you need to add to hardware_logic.py
+        success = self.logic.calibrate_scoop() 
+        
+        if success:
+            self.logic.log("Scoop successfully calibrated.")
+            self.ui_state["scoop_calibrated"] = True
+        else:
+            self.logic.log("Scoop calibration failed or timed out!")
+            
+        self._refresh_sig.emit()
 
     def _handle_samples(self):
         dlg = KeypadDialog(self.logic, self.logic.total_samples, self.SCALE, self)
@@ -697,7 +684,6 @@ class SoilSenseWindow(QMainWindow):
     def _refresh_ui(self):
         logic = self.logic
 
-        # Logs
         while self.log_layout.count():
             item = self.log_layout.takeAt(0)
             if item.widget():
@@ -708,13 +694,11 @@ class SoilSenseWindow(QMainWindow):
             lbl.setStyleSheet(f"color:{TEXT_MUTED};")
             lbl.setWordWrap(True)
             self.log_layout.addWidget(lbl)
-        # Auto-scroll
         QTimer.singleShot(50, lambda: self.log_scroll.verticalScrollBar().setValue(
             self.log_scroll.verticalScrollBar().maximum()
         ))
 
-        # Soil results
-        while self.soil_results_layout.count() > 1:  # keep stretch
+        while self.soil_results_layout.count() > 1:
             item = self.soil_results_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
@@ -724,12 +708,10 @@ class SoilSenseWindow(QMainWindow):
             lbl.setStyleSheet(f"color:{WHITE};")
             self.soil_results_layout.insertWidget(i, lbl)
 
-        # Samples / weight label
         self.total_samples_label.setText(
             f"Target: {logic.total_samples} samples | {logic.soil_weight}g"
         )
 
-        # Status dots
         for device, indicator in self.status_indicators.items():
             indicator.setStyleSheet(
                 f"background:{logic.statuses[device].value}; border-radius:{indicator.width()//2}px;"
@@ -741,31 +723,59 @@ class SoilSenseWindow(QMainWindow):
             f"background:{logic.door_statuses['right'].value}; border-radius:{self.door_indicators['right'].width()//2}px;"
         )
 
-        # Start/stop button states
+        # UPDATED: Start/stop and Calibration dependency logic
         if logic.isRunning:
             self.btn_start.setText("RUNNING")
             self.btn_start.setDisabled(True)
+            self.btn_zero_gantry.setDisabled(True)
+            self.btn_calibrate_scoop.setDisabled(True)
+            if "CALIBRATING" in self.btn_calibrate_scoop.text():
+                self.btn_calibrate_scoop.setText("CAL. SCOOP")
+
         elif not self.ui_state["gantry_zeroed"]:
             self.btn_start.setText("ZERO FIRST")
             self.btn_start.setDisabled(True)
+            
             self.btn_zero_gantry.setStyleSheet(_qss_btn(AMBER, BLACK))
+            self.btn_zero_gantry.setDisabled(False)
+            
+            self.btn_calibrate_scoop.setStyleSheet(_qss_btn(BORDER))
+            self.btn_calibrate_scoop.setDisabled(True)
+            self.btn_calibrate_scoop.setText("CAL. SCOOP")
+
+        elif not self.ui_state["scoop_calibrated"]:
+            self.btn_start.setText("CAL. SCOOP")
+            self.btn_start.setDisabled(True)
+            
+            self.btn_zero_gantry.setStyleSheet(_qss_btn(BORDER))
+            self.btn_zero_gantry.setDisabled(False)
+            
+            self.btn_calibrate_scoop.setStyleSheet(_qss_btn(AMBER, BLACK))
+            self.btn_calibrate_scoop.setDisabled(False)
+            if "CALIBRATING" not in self.btn_calibrate_scoop.text():
+                self.btn_calibrate_scoop.setText("CAL. SCOOP")
+
         else:
             self.btn_start.setText("START")
             self.btn_start.setDisabled(False)
+            
             self.btn_zero_gantry.setStyleSheet(_qss_btn(BORDER))
+            self.btn_zero_gantry.setDisabled(False)
+            
+            self.btn_calibrate_scoop.setStyleSheet(_qss_btn(BORDER))
+            self.btn_calibrate_scoop.setDisabled(False)
+            self.btn_calibrate_scoop.setText("CAL. SCOOP")
 
         self.btn_stop.setVisible(logic.isRunning)
         self.btn_samples.setDisabled(logic.isRunning)
         self.btn_weight.setDisabled(logic.isRunning)
 
-        # Step highlighter
         for step, lbl in self.step_indicators.items():
             if logic.scooper_status == step:
                 lbl.setStyleSheet(f"background:{ACCENT}; color:black; padding:8px; border-radius:6px; font-weight:bold;")
             else:
                 lbl.setStyleSheet(f"color:{TEXT_MUTED}; padding:8px; border-radius:6px;")
 
-    # ─────────────── HELPERS ────────────────────────────────────
     def _make_dot(self, color: str) -> QLabel:
         S = self.SCALE
         size = int(24 * S)
@@ -787,7 +797,6 @@ class SoilSenseWindow(QMainWindow):
         return lbl
 
     def _scroll_card(self):
-        """Returns (QScrollArea_inside_card_frame, inner QVBoxLayout)."""
         card = _card_frame()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(4,4,4,4)
@@ -806,7 +815,6 @@ class SoilSenseWindow(QMainWindow):
         scroll.setWidget(inner)
         card_layout.addWidget(scroll)
 
-        # return the card (to add to parent) + inner layout (to populate)
         return card, layout
 
     def closeEvent(self, event):
@@ -814,12 +822,10 @@ class SoilSenseWindow(QMainWindow):
         super().closeEvent(event)
 
 
-# ──────────────────────── ENTRY POINT ──────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Dark palette fallback
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window,          QColor(BG_MAIN))
     palette.setColor(QPalette.ColorRole.WindowText,      QColor(WHITE))
