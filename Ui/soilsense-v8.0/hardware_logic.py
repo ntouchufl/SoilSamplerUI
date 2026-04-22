@@ -442,9 +442,9 @@ class SoilSenseLogic:
             # 4. Take image
             self.scooper_status = "Taking Image"
             self.log(f"Sample {i+1}: Taking Image...")
-            response = self.write_hardware("camera", "SNAP")
+            status, raw_res, img = self.communicate_with_jetson("SNAP")
 
-            if not response.startswith("Y"):
+            if not status.startswith("Y"):
                 self.log(f"Error on Sample {i+1}: No confirmation from camera. Halting.")
                 self.stop_sequence()
                 break # Stop the sequence from moving to the next step
