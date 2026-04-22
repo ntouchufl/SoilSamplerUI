@@ -1,0 +1,43 @@
+Gantry:
+MOVE scoop to BAG X,Y = "BXY"
+MOVE scoop to TUBE X,Y = "TXY"
+MOVE mixer to X,Y = "MXY"
+MOVE camera to X,Y = "CXY"
+
+GO HOME = "H"
+ZERO = "Z"
+STOP = "S"
+MOTOR ON = "M1"
+MOTOR OFF = "M0"
+
+Return-
+Yxxxx (Success with elapsed time in ms)
+F(code) (Failure with error code)
+
+Errors: 
+0 - UNKNOWN COMMAND
+1 - INDEX OUT OF RANGE
+2 - LIMIT HIT / EMERGENCY STOP
+
+Scoop:
+SCOOP = "S"
+DISPENSE = "D<weight>"
+EMPTY = "E"
+QUIT = "Q"
+
+Return-
+Yxxxx
+F(code)
+"E" - Empty Bag
+
+Errors:
+1 - BAG EMPTY (Load cell didn't trigger)
+2 - OVERTRAVEL
+3 - Invalid Command
+
+Jetson:
+ANALYZE = "A"
+
+Return-
+Yxxxx (followed by JSON data)
+F(code)
